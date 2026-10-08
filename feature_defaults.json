@@ -1,0 +1,6 @@
+﻿{
+  "RUNNER_ENV_CONFIG": "runner_envs.json",
+  "FEATURE_BACKBONE": "dinov2_vitb14",
+  "FEATURE_TARGET_DIM": 768,
+  "I3D_TARGET_DIM": 1024
+}

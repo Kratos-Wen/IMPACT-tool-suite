@@ -1,0 +1,17 @@
+# Core GUI
+PyQt5>=5.15.9
+opencv-python>=4.8.0.76
+numpy>=1.23.5,<2.0
+PyYAML>=6.0
+Pillow>=9.5.0
+
+# HOI detection assist (YOLO + MediaPipe)
+ultralytics>=8.0.0
+mediapipe>=0.10.9
+
+# Action assist / semantic adapter runtime
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+transformers>=4.30.0
+decord>=0.6.0

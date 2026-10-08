@@ -1,0 +1,5 @@
+PyQt5==5.15.11
+opencv-python==4.11.0.86
+numpy==1.26.4
+PyYAML==6.0.2
+Pillow>=10,<12
