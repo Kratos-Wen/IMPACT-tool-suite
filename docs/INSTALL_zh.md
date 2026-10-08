@@ -1,145 +1,47 @@
-# 安装与启动
+# 安装与使用
 
-仓库只有一个软件版本。下载后直接在仓库根目录安装和启动，不选择工程批号目录。
+使用Python 3.11和Git。Windows、Linux、macOS运行同一套工具。[完整安装命令](INSTALL_en.md)。
 
-## 1. 获取代码
+## 安装编辑器
 
-安装 Git 和 Python 3.10/3.11。以下命令示例使用 Python 3.11。终端运行：
-
-```bash
-git clone https://github.com/Kratos-Wen/IMPACT-tool-suite.git
-cd IMPACT-tool-suite
-```
-
-也可以在 GitHub 选择 Code → Download ZIP，解压后进入包含 `app.py` 的目录。
-
-## 2. 安装普通编辑界面
-
-Windows PowerShell（使用环境中的 Python，不依赖激活脚本权限）：
+Windows PowerShell：
 
 ```powershell
+git clone https://github.com/Kratos-Wen/IMPACT-tool-suite.git
+cd IMPACT-tool-suite
 py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe launch.py --oplog
 ```
 
-Linux / macOS：
+Linux/macOS：
 
 ```bash
+git clone https://github.com/Kratos-Wen/IMPACT-tool-suite.git
+cd IMPACT-tool-suite
 python3.11 -m venv .venv
-.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python launch.py --oplog
 ```
 
-普通拖框、事件编辑和保存不需要安装 SAM。`requirements-optional.txt` 是历史辅助功能的可选依赖，不是 SAM 安装步骤，也不必为普通编辑全部安装。Linux 若报 `libGL.so.1` 等缺失，按发行版安装系统 Qt/OpenGL 库（Ubuntu 可安装 `libgl1 libegl1 libxkbcommon-x11-0 libxcb-xinerama0`）。远程纯终端没有桌面显示时不能直接交互使用 GUI。
+## 安装SAM修正传播
 
-## 3. 安装 SAM2.1 Small 修正传播
+按照[英文安装说明](INSTALL_en.md#sam-correction-propagation-on-cpu)在同一虚拟环境安装PyTorch和固定版本的SAM2。Windows/Linux使用CPU wheel索引，macOS使用普通PyPI wheel。使用材料包中的sam2.1_hiera_small.pt，默认CPU即可运行。
 
-建议在 Linux，或 Windows 11 的 WSL2 Ubuntu 桌面显示环境中同时运行工具和 SAM。Windows 原生及 macOS 的 SAM 后端未完成验收；不能把本节当作这些平台已验证的安装承诺。WSL 中创建并使用 Linux 的虚拟环境，不能复用 Windows 的 `.venv`。
-
-进入仓库根目录，激活 Linux 环境：
+独立任务可以给launch.py加参数：
 
 ```bash
-source .venv/bin/activate
-python -m pip install --upgrade pip
+--project-profile "/path/to/project_profile.json" --sam-checkpoint "/path/to/sam2.1_hiera_small.pt" --device cpu
 ```
 
-CPU 安装（功能可运行，传播会慢）：
+## 加载和保存
 
-```bash
-python -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
-```
+下载个人任务目录与同级Shared。进入Manual模式打开任务video.mp4，task.json自动加载配置、标注和权重路径。已有reviewed.json时恢复它；保存默认写入reviewed.json。编号、FPS和帧数必须匹配。
 
-有兼容 NVIDIA GPU、驱动且希望用 GPU 时，改用下面这条，不要同时执行 CPU 安装：
+独立视频用Load HOI annotations选择配套稿。导入旧格式时，工具先将原文件放入archived，再转换为当前格式。
 
-```bash
-python -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
-```
+选event和实例，拖动或缩放当前框，用Track Correction选择前向/后向及帧数。检查建议后应用，Undo可撤回。Ctrl＋滚轮缩放；右键删除当前框。Frame review用于核验和跳转未完成帧。项目标签和具体标注要求随内部材料发放。
 
-GPU 模式应输出 `True`。否则先检查驱动和 PyTorch 安装，不要直接启用 GPU。工具不会申请 Slurm GPU。
+## 常见问题
 
-安装已测试的 SAM2 源码：
-
-```bash
-mkdir -p .deps
-git clone https://github.com/facebookresearch/sam2.git .deps/sam2
-git -C .deps/sam2 checkout 2b90b9f5ceec907a1c18123530e92e794ad901a4
-SAM2_BUILD_CUDA=0 python -m pip install --no-build-isolation -e .deps/sam2
-python -c "from sam2.build_sam import build_sam2_video_predictor; print('SAM import OK')"
-```
-
-`SAM2_BUILD_CUDA=0` 省去编译可选 CUDA 后处理扩展，不关闭 GPU 推理；相关小孔/碎片后处理会跳过。具体要求见 [SAM2 官方安装说明](https://github.com/facebookresearch/sam2/blob/main/INSTALL.md)。
-
-取得 `sam2.1_hiera_small.pt`：可以使用项目资产包已附权重，或从 [官方地址](https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt) 下载。权重留在 Git 仓库外，或放在被忽略的 `weights/` 目录。运行时无需联网下载模型。
-
-启动 SAM 界面（将路径改成实际本地路径）：
-
-```bash
-python launch.py --sam-checkpoint "/absolute/path/sam2.1_hiera_small.pt" --device cpu --oplog
-```
-
-已验证 CUDA 可用时，将 `--device cpu` 改成 `--device cuda`。若后端放在独立环境，还可添加 `--sam-python "/absolute/path/to/backend/python"`。工具和后端均在同一 Windows 或同一 WSL/Linux 文件系统环境运行。
-
-## 4. 使用项目资产
-
-项目负责人另外发放视频、预标注、权重、项目配置和标注规范。这些文件不在公开仓库内。项目配置不会自动下载。
-
-```bash
-python launch.py --project-profile "/absolute/path/project_profile.json" --sam-checkpoint "/absolute/path/sam2.1_hiera_small.pt" --device cpu --oplog
-```
-
-Windows 普通编辑时同样支持 `--project-profile`：
-
-```powershell
-.\.venv\Scripts\python.exe launch.py --project-profile "C:\IMPACT_assets\project_profile.json" --oplog
-```
-
-先选 Manual 模式打开视频，再使用 Load HOI annotations 导入与视频配套的 JSON。如果项目包包含 `SAM_editor_candidates.json`，该文件用于主界面的传播功能测试；`review.json` 打开独立预标注审核界面，该界面尚未接入 Track Correction。
-
-## 5. 软件操作
-
-选中事件及其物品/工具，在当前帧拖框或改变框大小，然后点击 **Track Correction**，输入要处理的后续帧数。检查建议后接受，或取消。接受后可撤销。传播受事件边界及既有人工锚点保护。
-
-Ctrl+滚轮缩放；右键框只删除当前帧的框；修改时间轴标记可调整事件边界。完成后另存 JSON，重新打开检查保存结果。具体哪些帧需要人工标注、如何定义事件和类别，由项目内部规范决定，公开文档不规定这些要求。
-
-## 6. 故障信息与验证范围
-
-- 缺依赖：确认在同一个 `.venv` 中安装和启动。
-- SAM import OK 失败：检查固定版本源码是否安装到启动所用 Python 中。
-- 找不到权重/配置：启动参数必须对应已下载文件，建议用绝对路径。
-- CUDA 不可用：检查上一节命令，或明确使用 CPU。
-- Qt 插件错误：避免混用 Conda、系统 Qt 和 venv；使用本工具启动入口。
-- 当前记录包含 Linux Qt 的组件测试和短视频传播测试；完整原主窗口流程及 Windows/macOS 尚未全部验收，部署测试结论见 `VALIDATION.md`。
-
-## 7. 三种桌面系统的支持目标与验收
-
-macOS（包括 Apple Silicon）、Linux 和 Windows 使用同一个界面、JSON 格式和项目配置。基础编辑不依赖 GPU。仓库的 Desktop compatibility 工作流在三种系统上检查真实主窗口创建、含空格及中文路径的跟踪子进程调用，以及共享状态、人工核验和传播保护逻辑。自动检查不等于真实视频及模型推理验收。
-
-macOS 的 SAM CPU 安装应使用普通 PyPI 的 PyTorch wheel，而不是 Linux/Windows CPU 索引：
-
-```bash
-.venv/bin/python -m pip install torch==2.5.1 torchvision==0.20.1
-SAM2_BUILD_CUDA=0 .venv/bin/python -m pip install --no-build-isolation -e .deps/sam2
-```
-
-Windows 原生 CPU 后端的等价命令（在完成上文 SAM 源码下载和版本固定后）：
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
-$env:SAM2_BUILD_CUDA = "0"
-.\.venv\Scripts\python.exe -m pip install --no-build-isolation -e .deps/sam2
-.\.venv\Scripts\python.exe launch.py --sam-checkpoint "C:\IMPACT_assets\sam2.1_hiera_small.pt" --device cpu --oplog
-```
-
-以上补充是安装候选路径，Windows 原生和 macOS 的真实 SAM 推理仍需验收。SAM 官方主要支持 Linux，并建议 Windows 使用 WSL；不能将其等同于已验证的原生支持。当前不提供未验证的 MPS 开关。Apple Silicon 上先使用 CPU；未来点跟踪辅助也必须提供 CPU 路径，不能使基础编辑依赖 CUDA。
-
-## 8. 按视频自动加载任务材料
-
-项目负责人可在每个视频目录提供 `task.json`（schema `IMPACT-TASK-1`），明确声明视频名、标注、恢复文件、项目配置及权重的相对路径。以 Manual 模式的 Load Video 打开视频后，工具自动读取清单；优先恢复已经保存的 `reviewed.json`，否则加载指定的编辑器格式标注。保存窗口默认指向该任务的恢复文件，原机器候选不被覆盖。
-
-同一视频已经打开且有标注状态时，重复打开不会重新覆盖当前编辑。帧数、帧率或视频编号不匹配时停止导入。待准备任务会显示原因，不能当成预标注完成。配置与路径可以随任务目录整体迁移，路径不得越出声明的包根目录。
-
-SAM checkpoint 仅登记路径，点击 Track Correction 时才加载模型；YOLO 路径记录为任务资产，不会在打开视频时自动占用显存。原始 `review.json` 仍用于独立审核界面，不自动混入主界面格式。下载个人目录时，同时下载同级 Shared 目录并保持结构，具体人员、类别和任务内容由内部资产包提供。
+安装和启动使用同一环境的Python。缺少SAM模块时补装后端；权重路径指向本地现有文件。Linux缺Qt库时按英文说明安装系统依赖。Qt插件报错时用launch.py启动，检查是否混用了系统Qt、Conda与venv。测试范围见[VALIDATION](../VALIDATION.md)。

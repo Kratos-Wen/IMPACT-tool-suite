@@ -13,8 +13,11 @@ from core.noun_aliases import refresh_aliases
 from core.anomaly_attributes import export_review,display_value
 from core.annotation_migration import adapt_annotation
 from ui.attribute_selector import AttributeSelector
-from ui.hoi_window import HOIWindow
+from ui.hoi_window import HOIWindow,YoloInferenceWorker
+from types import SimpleNamespace
 PROFILE.clear();PROFILE.update(default_anomaly_label='unreviewed',anomaly_labels=['attribute_a','attribute_b'],noun_aliases={'old_part':'part','old_combo':'assembly'},legacy_assembly_mappings={'old_combo':['part','attachment']},legacy_anomaly_candidates={'old_error':['attribute_a']},assembly_components=['part','attachment'],assembly_interfaces=[dict(id='part--attachment',base_component='part',completed_component='attachment')]);refresh_aliases()
+worker=YoloInferenceWorker(SimpleNamespace(names={0:'old_part'}),[],0.5,0.5,{0:'wrong_editor_class'})
+assert worker._class_name_for_id(0)=='part'
 selector=AttributeSelector();selector.setOptions(PROFILE['anomaly_labels'],'unreviewed')
 selector.toggle('attribute_a');selector.toggle('attribute_b');assert export_review(selector.currentText(),PROFILE)==dict(anomaly_labels=['attribute_a','attribute_b'],anomaly_review_state='reviewed')
 selector.toggle('unknown');assert export_review(selector.currentText(),PROFILE)['anomaly_review_state']=='partial'
@@ -42,8 +45,15 @@ for iteration in range(25):
  assert out['schema']=='hoi-annotation' and 'version' not in out
  w._load_annotations_v2(json.loads(json.dumps(out)))
 assert w._normalize_anomaly_label('old_temporal_category')=='unknown'
+# Auxiliary event graph exports the same multilabel state as the main editor.
+from core.structured_event_graph import build_hoi_event_graph
+current_graph=build_hoi_event_graph(w.events)
+assert current_graph['schema']=='hoi-event-graph'
+assert any(row['anomaly_labels']==['attribute_a','attribute_b'] for row in current_graph['events'])
+assert not any('anomaly_label' in row for row in current_graph['events'])
 w._assembly_default_reference=True;w._reset_event_draft();w.events=[dict(event_id=99,frames=[0,20],hoi_data=copy.deepcopy(w.event_draft))]
 assert not any(w._build_payload_v2()['hoi_events'].values()),'Idle hand generated event'
+assert not build_hoi_event_graph(w.events)['events'],'Idle shared hand generated graph event'
 # Real modal composition editor: unknown screw state and independent hand survive.
 from PyQt5.QtCore import QTimer,Qt
 from PyQt5.QtWidgets import QComboBox,QListWidget,QTableWidget,QDialogButtonBox

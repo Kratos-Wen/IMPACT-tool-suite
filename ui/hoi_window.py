@@ -453,19 +453,20 @@ class YoloInferenceWorker(QThread):
         self.class_map = dict(class_map or {})
 
     def _class_name_for_id(self, cls_id: int):
-        class_name = self.class_map.get(cls_id)
-        if class_name is None:
-            class_name = self.class_map.get(str(cls_id))
-        if class_name is None and hasattr(self.model, "names"):
+        # Class IDs belong to the checkpoint; editor taxonomy order is independent.
+        class_name = None
+        if hasattr(self.model, 'names'):
             names = self.model.names
             if isinstance(names, dict):
-                class_name = names.get(cls_id)
+                class_name = names.get(cls_id, names.get(str(cls_id)))
             else:
-                try:
-                    class_name = names[int(cls_id)]
-                except Exception:
-                    class_name = None
-        return class_name
+                try: class_name = names[int(cls_id)]
+                except (IndexError, TypeError, ValueError): pass
+        if class_name is None:
+            class_name = self.class_map.get(cls_id, self.class_map.get(str(cls_id)))
+        if class_name is None:return None
+        from core.annotation_migration import canonical_noun
+        return canonical_noun(str(class_name).lower(), _PROJECT_PROFILE)
 
     def _predict_once(self, frame_bgr, device: str):
         try:
@@ -3413,7 +3414,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                     "title": "4. Fill labels",
                     "body_lines": [
                         "Choose verb and noun. Choose Instrument only if the event uses a tool.",
-                        "Anomaly defaults to normal; use error_* or recovery only when the event requires it.",
+                        "Review event attributes explicitly. Select Normal after checking, or record the observed attributes.",
                     ],
                     "accent": "#16A34A",
                     "tone": "green",
@@ -18214,11 +18215,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                 return None
 
             target_tid = links.get("target_track_id")
-            target_id = (
-                track_obj_id.get(target_tid)
-                if target_tid
-                else event.get("noun_object_id", event.get("target_object_id"))
-            )
+            target_id = event.get("noun_object_id", event.get("target_object_id"))
+            if target_id is None:target_id = track_obj_id.get(target_tid)
             if target_id is None:
                 target_id = _object_id_for_label(
                     interaction.get("target") or interaction.get("noun")
@@ -18226,11 +18224,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             target_id = _safe_int(target_id, None)
 
             instrument_tid = links.get("tool_track_id") or links.get("instrument_track_id")
-            instrument_id = (
-                track_obj_id.get(instrument_tid)
-                if instrument_tid
-                else event.get("instrument_object_id", event.get("tool_object_id"))
-            )
+            instrument_id = event.get("instrument_object_id", event.get("tool_object_id"))
+            if instrument_id is None:instrument_id = track_obj_id.get(instrument_tid)
             if instrument_id is None:
                 instrument_id = _object_id_for_label(
                     interaction.get("instrument") or interaction.get("tool")
@@ -18456,12 +18451,16 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
         cleaned = str(text).strip().lower()
         cleaned = cleaned.replace("-", "_").replace(" ", "_")
         cleaned = re.sub(r"_+", "_", cleaned).strip("_")
-        # Comment out the next line to disable every task-specific category patch.
+        from core.annotation_migration import canonical_noun
+        cleaned = canonical_noun(cleaned, _PROJECT_PROFILE)
+        instance = re.fullmatch(r'(.*)_(\d+)',cleaned)
+        if instance and instance[1] in _PROJECT_PROFILE.get('noun_aliases',{}).values():cleaned=instance[1]
         cleaned = _apply_task_specific_category_mapping(cleaned, for_detection=for_detection)
         return cleaned
 
     def _canonical_label_name(self, text: Any) -> str:
-        return str(text or "").strip().lower()
+        from core.annotation_migration import canonical_noun
+        return canonical_noun(str(text or "").strip("\ufeff").strip().lower(), _PROJECT_PROFILE)
 
     def _portable_path_token(self, path: Any) -> str:
         text = str(path or "").strip()

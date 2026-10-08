@@ -4,7 +4,7 @@ A single desktop application for editing hand–object interaction annotations a
 
 ## Installation
 
-See [详细中文安装、启动及操作说明](docs/INSTALL_zh.md). Run from the repository root.
+See the [installation guide](docs/INSTALL_en.md) or [中文说明](docs/INSTALL_zh.md). Run from the repository root.
 
 ```bash
 python3.11 -m venv .venv

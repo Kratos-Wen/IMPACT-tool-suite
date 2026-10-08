@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -6,49 +6,10 @@ import re
 from typing import Any, Dict, List, Optional, Sequence
 
 
-SCHEMA_VERSION = 4
-DEFAULT_ANOMALY_LABEL = "normal"
-ANOMALY_LABEL_OPTIONS = (
-    "error_temporal",
-    "error_spatial",
-    "error_handling",
-    "error_wrong_part",
-    "error_wrong_tool",
-    "error_procedural",
-    "recovery",
-    "normal",
-)
-ANOMALY_LABEL_ALIASES = {
-    "none": "normal",
-    "no_anomaly": "normal",
-    "no anomaly": "normal",
-    "normal_event": "normal",
-    "normal event": "normal",
-    "temporal_anomaly": "error_temporal",
-    "temporal anomaly": "error_temporal",
-    "error temporal": "error_temporal",
-    "spatial_anomaly": "error_spatial",
-    "spatial anomaly": "error_spatial",
-    "error spatial": "error_spatial",
-    "visibility_occlusion": "error_spatial",
-    "visibility / occlusion": "error_spatial",
-    "visibility_or_occlusion": "error_spatial",
-    "handling_anomaly": "error_handling",
-    "handling anomaly": "error_handling",
-    "error handling": "error_handling",
-    "quality_outcome_visible_defect": "error_handling",
-    "quality / outcome-visible defect": "error_handling",
-    "wrong_part": "error_wrong_part",
-    "wrong part": "error_wrong_part",
-    "wrong_tool": "error_wrong_tool",
-    "wrong tool": "error_wrong_tool",
-    "procedural_anomaly": "error_procedural",
-    "procedural anomaly": "error_procedural",
-    "error procedural": "error_procedural",
-    "anomaly": "error_temporal",
-    "unspecified_anomaly": "error_temporal",
-    "unspecified anomaly": "error_temporal",
-}
+from core.project_profile import PROFILE
+from core.anomaly_attributes import normalize, export_review, display_value, is_positive
+
+DEFAULT_ANOMALY_LABEL = 'unreviewed'
 
 FIELD_TO_ENTRY_KEY = {
     "interaction_start": "start_frame",
@@ -86,42 +47,11 @@ def _anomaly_label_lookup_keys(value: Any) -> List[str]:
 
 
 def _normalize_anomaly_label(value: Any) -> str:
-    if isinstance(value, dict):
-        for key in ("name", "label", "type", "anomaly_label", "anomaly_type"):
-            if key in value:
-                label = _normalize_anomaly_label(value.get(key))
-                if label:
-                    return label
-        return DEFAULT_ANOMALY_LABEL
-    if isinstance(value, (list, tuple, set)):
-        for item in value:
-            label = _normalize_anomaly_label(item)
-            if label and label != DEFAULT_ANOMALY_LABEL:
-                return label
-        return DEFAULT_ANOMALY_LABEL
-    text = _safe_text(value)
-    if not text:
-        return DEFAULT_ANOMALY_LABEL
-    if re.search(r"[,;|]", text):
-        for part in re.split(r"[,;|]+", text):
-            label = _normalize_anomaly_label(part)
-            if label and label != DEFAULT_ANOMALY_LABEL:
-                return label
-        return DEFAULT_ANOMALY_LABEL
-    keys = set(_anomaly_label_lookup_keys(text))
-    for option in ANOMALY_LABEL_OPTIONS:
-        if keys.intersection(_anomaly_label_lookup_keys(option)):
-            return option
-    for key in keys:
-        alias = ANOMALY_LABEL_ALIASES.get(key)
-        if alias:
-            return alias
-    return text
+    return normalize(value, PROFILE)
 
 
 def _is_anomaly_label(value: Any) -> bool:
-    text = _normalize_anomaly_label(value).lower()
-    return bool(text and text != DEFAULT_ANOMALY_LABEL)
+    return is_positive(value, PROFILE)
 
 
 def _normalize_annotation_state(raw: Any) -> Dict[str, Any]:
@@ -218,7 +148,7 @@ def _has_event_content(entry: Dict[str, Any]) -> bool:
             "instrument_object_id",
         )
     ) or bool(_safe_text(entry.get("verb", ""))) or _is_anomaly_label(
-        entry.get("anomaly_label")
+        display_value(entry, PROFILE)
     )
 
 
@@ -340,10 +270,8 @@ def build_hoi_event_graph(
             instrument_object_id = _safe_int(
                 hand.get("instrument_object_id", hand.get("tool_object_id"))
             )
-            anomaly_label = _normalize_anomaly_label(hand.get("anomaly_label"))
-            if bool(hand.get("has_anomaly")) and anomaly_label == DEFAULT_ANOMALY_LABEL:
-                anomaly_label = ANOMALY_LABEL_OPTIONS[0]
-            has_anomaly = _is_anomaly_label(anomaly_label) or bool(hand.get("has_anomaly"))
+            anomaly_label = display_value(hand, PROFILE)
+            has_anomaly = _is_anomaly_label(anomaly_label)
             entry = {
                 "event_id": int(event_id),
                 "hand": actor_id,
@@ -358,7 +286,8 @@ def build_hoi_event_graph(
                 "noun_object_id": noun_object_id,
                 "instrument_object_id": instrument_object_id,
                 "tool_object_id": instrument_object_id,
-                "anomaly_label": anomaly_label,
+                **export_review(anomaly_label, PROFILE),
+                **{k:v for k,v in hand.get("_event_extra",{}).items() if k in ("anomaly_evidence","onset_review_state","onset_reason")},
                 "has_anomaly": bool(has_anomaly),
                 "source_task": "hoi",
                 "confirmed_kind": "unresolved",
@@ -371,6 +300,8 @@ def build_hoi_event_graph(
                     hand.get("_sparse_evidence_state")
                 ),
             }
+            if hand.get('shared_assembly_ref') and not any((start_frame is not None,onset_frame is not None,end_frame is not None,bool(entry['verb']),instrument_object_id is not None,has_anomaly)):
+                continue
             if not _has_event_content(entry):
                 continue
 
@@ -428,7 +359,7 @@ def build_hoi_event_graph(
                         "noun_object_id": entry["noun_object_id"],
                         "instrument_object_id": entry["instrument_object_id"],
                         "tool_object_id": entry["tool_object_id"],
-                        "anomaly_label": entry["anomaly_label"],
+                        **export_review(display_value(entry, PROFILE), PROFILE),
                         "has_anomaly": bool(entry.get("has_anomaly")),
                         "locked": bool(onset_locked),
                         "anchor_type": "contact_onset",
@@ -451,7 +382,7 @@ def build_hoi_event_graph(
                         "noun_object_id": entry["noun_object_id"],
                         "instrument_object_id": entry["instrument_object_id"],
                         "tool_object_id": entry["tool_object_id"],
-                        "anomaly_label": entry["anomaly_label"],
+                        **export_review(display_value(entry, PROFILE), PROFILE),
                         "has_anomaly": bool(entry.get("has_anomaly")),
                         "locked": True,
                         "region_type": "confirmed_temporal_support",
@@ -475,11 +406,11 @@ def build_hoi_event_graph(
 
     anomaly_label_counts: Dict[str, int] = {}
     for item in graph_events:
-        label = _normalize_anomaly_label(item.get("anomaly_label"))
-        anomaly_label_counts[label] = int(anomaly_label_counts.get(label, 0) or 0) + 1
+        for label in item.get("anomaly_labels",[]):
+            anomaly_label_counts[label] = int(anomaly_label_counts.get(label, 0) or 0) + 1
 
     return {
-        "schema_version": int(SCHEMA_VERSION),
+        "schema": "hoi-event-graph",
         "graph_type": "hoi_event_graph",
         "source_task": "hoi",
         "video_path": _portable_path_token(video_path),
@@ -573,9 +504,8 @@ def extract_onset_anchors(graph: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "tool_object_id": _safe_int(
                     item.get("tool_object_id", item.get("instrument_object_id"))
                 ),
-                "anomaly_label": _normalize_anomaly_label(item.get("anomaly_label")),
-                "has_anomaly": bool(item.get("has_anomaly"))
-                or _is_anomaly_label(item.get("anomaly_label")),
+                **export_review(display_value(item, PROFILE), PROFILE),
+                "has_anomaly": _is_anomaly_label(display_value(item, PROFILE)),
                 "locked": bool(item.get("locked", True)),
                 "anchor_type": _safe_text(item.get("anchor_type", "contact_onset")) or "contact_onset",
                 "source_task": _safe_text(item.get("source_task", "hoi")) or "hoi",
@@ -621,9 +551,8 @@ def extract_locked_regions(graph: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "tool_object_id": _safe_int(
                     item.get("tool_object_id", item.get("instrument_object_id"))
                 ),
-                "anomaly_label": _normalize_anomaly_label(item.get("anomaly_label")),
-                "has_anomaly": bool(item.get("has_anomaly"))
-                or _is_anomaly_label(item.get("anomaly_label")),
+                **export_review(display_value(item, PROFILE), PROFILE),
+                "has_anomaly": _is_anomaly_label(display_value(item, PROFILE)),
                 "locked": bool(item.get("locked", True)),
                 "region_type": _safe_text(item.get("region_type", "confirmed_temporal_support")) or "confirmed_temporal_support",
                 "source_task": _safe_text(item.get("source_task", "hoi")) or "hoi",
