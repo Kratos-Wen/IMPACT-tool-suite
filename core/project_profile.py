@@ -14,3 +14,16 @@ def load_project_profile():
     return data
 
 PROFILE = load_project_profile()
+
+
+def activate_project_profile(path):
+    """Keep the shared dictionary identity so imported references stay current."""
+    file = Path(path).expanduser().resolve()
+    data = json.loads(file.read_text(encoding="utf-8-sig"))
+    if not isinstance(data, dict):
+        raise ValueError("Project profile must be a JSON object")
+    PROFILE.clear()
+    PROFILE.update(data)
+    os.environ["IMPACT_PROJECT_PROFILE"] = str(file)
+    from core.noun_aliases import refresh_aliases
+    refresh_aliases()

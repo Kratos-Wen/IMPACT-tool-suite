@@ -30,3 +30,8 @@ def normalize_noun_aliases(value,path='',parent=''):
   if isinstance(item,str) and (key in _FIELDS or parent in _MAPS):result[key]=_canonical(item,key in {'label','object_name'} and '/object_library/' in location)
   else:result[key]=normalize_noun_aliases(item,location,str(key))
  return result
+
+
+def refresh_aliases():
+ _ALIASES.clear()
+ _ALIASES.update({re.sub(r'[ -]+','_',str(k).strip()).casefold():str(v) for k,v in (PROFILE.get('noun_aliases') or {}).items()})

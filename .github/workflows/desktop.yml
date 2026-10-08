@@ -26,3 +26,5 @@ jobs:
       - run: python tests/test_correction_propagation.py
       - run: python tests/test_instance_edits.py
       - run: python tests/test_noun_aliases.py
+      - run: python tests/test_task_assets.py
+      - run: python tests/test_task_bundle_gui.py

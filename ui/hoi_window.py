@@ -10308,6 +10308,61 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                 best_path = candidate
         return best_path if best_score >= 0 else ""
 
+    def _auto_load_task_bundle(self, video_path):
+        from core.task_assets import resolve_task
+        from core.project_profile import activate_project_profile
+        global _DEFAULT_ANOMALY_LABEL, _ANOMALY_LABEL_OPTIONS, _ANOMALY_LABEL_ALIASES
+        task = resolve_task(video_path)
+        if task is None:
+            return False
+        data, paths = task["data"], task["paths"]
+        # Validate every required input before changing profile or annotations.
+        profile = paths.get("project_profile")
+        if profile is None or not profile.is_file():
+            raise ValueError("Task project_profile.json is missing")
+        profile_data = json.loads(profile.read_text(encoding="utf-8-sig"))
+        if not isinstance(profile_data, dict):
+            raise ValueError("Invalid task project profile")
+        if data.get("status") != "ready":
+            QMessageBox.warning(self, "Task not ready", data.get("reason") or "Assets or timeline verification are pending. No annotations imported.")
+            return True
+        expected = data.get("frame_count")
+        if expected is not None and int(expected) != int(self.player.frame_count):
+            raise ValueError("Video frame count differs from the task manifest")
+        fps = data.get("fps")
+        if fps is not None and abs(float(fps)-float(self.player.frame_rate)) > 0.01:
+            raise ValueError("Video FPS differs from the task manifest")
+        resume = paths.get("resume_annotations")
+        annotation = resume if resume and resume.is_file() else paths.get("annotations")
+        if annotation is None or not annotation.is_file():
+            raise ValueError("Task annotations are missing")
+        payload = json.loads(annotation.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, dict) or "tracks" not in payload or "hoi_events" not in payload:
+            raise ValueError("Task requires editor-format annotations; review.json is retained separately")
+        if payload.get("video_id") and str(payload["video_id"]) != str(data.get("trial_id")):
+            raise ValueError("Annotation identity differs from the task")
+        activate_project_profile(profile)
+        _DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "normal"))
+        _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
+        _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
+        self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
+        # Register checkpoints only: opening a video must not eagerly load GPU models.
+        checkpoint = paths.get("sam_checkpoint")
+        os.environ.pop("IMPACT_SAM2_CHECKPOINT", None)
+        if checkpoint and checkpoint.is_file():
+            os.environ["IMPACT_SAM2_CHECKPOINT"] = str(checkpoint)
+        self.task_yolo_checkpoint = str(paths.get("yolo_checkpoint") or "")
+        self._load_annotations_v2(payload, annotation_path=str(annotation))
+        self.current_annotation_path = str(resume or annotation)
+        self._task_resume_path = str(resume) if resume else ""
+        self._mark_query_calibration_dirty()
+        self._mark_hoi_saved()
+        self._log("hoi_task_bundle_loaded", manifest=str(task["manifest"]), annotations=str(annotation))
+        self._update_onboarding_banner()
+        if checkpoint and not checkpoint.is_file():
+            QMessageBox.warning(self, "Tracking weights missing", "Annotations loaded. Download the bundle weights before using Track Correction.")
+        return True
+
     def _auto_load_local_assets_for_video(self, video_path: str) -> None:
         path = str(video_path or "").strip()
         if not path:
@@ -14374,6 +14429,9 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             return
         target_norm = self._normalized_video_path(fp)
         current_norm = self._normalized_video_path(self.video_path)
+        if current_norm == target_norm and self._workspace_has_annotation_state():
+            self._log("hoi_video_already_open_edits_retained", path=fp)
+            return
         if current_norm and target_norm and current_norm != target_norm and self._workspace_has_annotation_state():
             if not self._confirm_save_before_loading_video(fp):
                 return
@@ -14394,10 +14452,17 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             QMessageBox.warning(self, "Error", "Failed to load video.")
             self._log_annotation_ready_state("hoi_load_video_failed")
             return
-        self._auto_load_local_assets_for_video(fp)
+        self.current_annotation_path = ""
+        self._task_resume_path = ""
+        try:
+            task_loaded = self._auto_load_task_bundle(fp)
+        except Exception as exc:
+            QMessageBox.warning(self, "Task loading failed", str(exc))
+            return
+        if not task_loaded:
+            self._auto_load_local_assets_for_video(fp)
         self._log_annotation_ready_state("hoi_load_video_assets")
         self._maybe_warn_full_assist_semantic_unavailable("hoi_load_video_assets")
-        self.current_annotation_path = ""
         self._mark_query_calibration_dirty()
         self._update_onboarding_banner()
 
@@ -17360,7 +17425,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                 return
 
             # 2. Generate filename
-            default_name = f"{self._default_annotation_basename()}.json"
+            default_name = getattr(self, "_task_resume_path", "") or f"{self._default_annotation_basename()}.json"
             fp, _ = QFileDialog.getSaveFileName(
                 self,
                 "Save HOI Annotations",
