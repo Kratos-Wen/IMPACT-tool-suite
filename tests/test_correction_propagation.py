@@ -21,6 +21,6 @@ for version in ('',):
   try:m.apply(raw,req,invalid)
   except ValueError:pass
   else:raise AssertionError('Invalid predictions accepted')
- for path in ('core/correction_propagation.py','tools/sam2_correction_worker.py','ui/correction_propagation.py','ui/hoi_window.py'):ast.parse((root/version/path).read_text())
+ for path in ('core/correction_propagation.py','tools/sam2_correction_worker.py','ui/correction_propagation.py','ui/hoi_window.py'):ast.parse((root/version/path).read_text(encoding="utf-8"))
  results[version]=dict(instance_id_zero=True,other_instances_preserved=True,hand_namespace_collision_preserved=True,anchor_preserved=True,stop_before_human_anchor=True,empty_mask_removes_auto_box=True,proposal_not_human_verified=True,source_not_mutated=True,invalid_predictions_rejected=True,syntax=True,model_inference_tested=False)
 print(json.dumps(results))

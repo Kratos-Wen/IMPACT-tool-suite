@@ -12,9 +12,9 @@ app=QApplication([])
 from ui.hoi_window import HOIWindow
 w=HOIWindow();w.player.frame_count=100;w.player.frame_rate=15
 with tempfile.TemporaryDirectory() as d:
- r=Path(d);(r/'video.mp4').touch();(r/'weights.pt').touch()
+ r=Path(d).resolve();(r/'video.mp4').touch();(r/'weights.pt').touch()
  (r/'profile.json').write_text(json.dumps({'noun_aliases':{'old':'new'},'anomaly_labels':['normal']}))
- payload=dict(video_id='trial',tracks={},hoi_events={'left_hand':[],'right_hand':[]})
+ payload=dict(video_id='trial',frame_count=100,fps=15,tracks={},hoi_events={'left_hand':[],'right_hand':[]})
  (r/'annotations.json').write_text(json.dumps(payload))
  manifest=dict(schema='IMPACT-TASK-1',trial_id='trial',video='video.mp4',status='ready',project_profile='profile.json',annotations='annotations.json',resume_annotations='reviewed.json',sam_checkpoint='weights.pt',frame_count=100,fps=15)
  (r/'task.json').write_text(json.dumps(manifest));assert w._auto_load_task_bundle(str(r/'video.mp4'))
@@ -24,8 +24,12 @@ with tempfile.TemporaryDirectory() as d:
  assert w._auto_load_task_bundle(str(r/'video.mp4'))
  assert w._test_loaded_payload['resume_marker'] is True
  manifest['status']='pending';(r/'task.json').write_text(json.dumps(manifest))
+ assert w._auto_load_task_bundle(str(r/'video.mp4')) and w._test_loaded_payload['resume_marker'] is True
+ (r/'reviewed.json').unlink()
  previous=w._test_loaded_payload
  assert w._auto_load_task_bundle(str(r/'video.mp4')) and w._test_loaded_payload is previous
+ w.video_path=str(r/'video.mp4')
+ assert w._build_payload_v2()['video_id']=='trial'
  manifest['status']='ready'
  manifest['frame_count']=99;(r/'task.json').write_text(json.dumps(manifest))
  try:w._auto_load_task_bundle(str(r/'video.mp4'));raise AssertionError('mismatch accepted')

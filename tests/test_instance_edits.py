@@ -56,7 +56,7 @@ for name in ['']:
  results.append({'variant':name,'passed':['selected_event_ID_filter_including_zero','no_background_when_no_event','geometry_keeps_instance_ID','delete_current_frame_only','noun_add_exact_ID','manual_name_creates_new_instance','numeric_add_reuses_ID','deleted_cached_hand_not_regenerated']})
 
 for name in ['']:
- tree=ast.parse((root/name/'preannotation_review/review_gui.py').read_text())
+ tree=ast.parse((root/name/'preannotation_review/review_gui.py').read_text(encoding="utf-8"))
  methods=[n for c in tree.body if isinstance(c,ast.ClassDef) for n in c.body if isinstance(n,ast.FunctionDef) and n.name in ['box_changed','hide_box']]
  cls=ast.ClassDef(name='Reviewer',bases=[],keywords=[],body=methods,decorator_list=[])
  ns={'copy':copy,'now':lambda:'test'}

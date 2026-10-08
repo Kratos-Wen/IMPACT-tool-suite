@@ -16,4 +16,4 @@ for v in ('',):
   Path(str(path)+'.orientation.json').write_text(json.dumps({'pixel_orientation':'upright_ccw90','rotation_ccw_degrees':90}))
   assert m.check_ego_orientation(path)[0]
   assert m.check_ego_orientation(Path(tmp)/'sample_upright_rgb.mp4')[0]
- ast.parse((root/v/'ui/video_player.py').read_text());print(v,'orientation guard PASS')
+ ast.parse((root/v/'ui/video_player.py').read_text(encoding="utf-8"));print(v,'orientation guard PASS')

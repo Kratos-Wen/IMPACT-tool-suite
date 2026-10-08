@@ -17,4 +17,4 @@ for v in ('',):
  assert new['text']=='tool_alias' and new['machine_snapshot']==old['machine_snapshot']
  assert new['object_library'][0]['id']==81 and new['object_library'][0]['label']=='tool_a_2'
  assert new['classes']==['tool_a','tool_a'];assert module.normalize_noun_aliases(new)==new
- ast.parse((root/v/'ui/hoi_window.py').read_text());print(v,'aliases PASS')
+ ast.parse((root/v/'ui/hoi_window.py').read_text(encoding="utf-8"));print(v,'aliases PASS')

@@ -10323,7 +10323,21 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         profile_data = json.loads(profile.read_text(encoding="utf-8-sig"))
         if not isinstance(profile_data, dict):
             raise ValueError("Invalid task project profile")
-        if data.get("status") != "ready":
+        activate_project_profile(profile)
+        _DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "normal"))
+        _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
+        _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
+        self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
+        # Register checkpoints only: opening a video must not eagerly load GPU models.
+        checkpoint = paths.get("sam_checkpoint")
+        os.environ.pop("IMPACT_SAM2_CHECKPOINT", None)
+        if checkpoint and checkpoint.is_file():
+            os.environ["IMPACT_SAM2_CHECKPOINT"] = str(checkpoint)
+        self.task_yolo_checkpoint = str(paths.get("yolo_checkpoint") or "")
+        self._task_trial_id = str(data.get("trial_id") or "")
+        resume = paths.get("resume_annotations")
+        self._task_resume_path = str(resume) if resume else ""
+        if data.get("status") != "ready" and not (resume and resume.is_file()):
             QMessageBox.warning(self, "Task not ready", data.get("reason") or "Assets or timeline verification are pending. No annotations imported.")
             return True
         expected = data.get("frame_count")
@@ -10341,17 +10355,11 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             raise ValueError("Task requires editor-format annotations; review.json is retained separately")
         if payload.get("video_id") and str(payload["video_id"]) != str(data.get("trial_id")):
             raise ValueError("Annotation identity differs from the task")
-        activate_project_profile(profile)
-        _DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "normal"))
-        _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
-        _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
-        self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
-        # Register checkpoints only: opening a video must not eagerly load GPU models.
-        checkpoint = paths.get("sam_checkpoint")
-        os.environ.pop("IMPACT_SAM2_CHECKPOINT", None)
-        if checkpoint and checkpoint.is_file():
-            os.environ["IMPACT_SAM2_CHECKPOINT"] = str(checkpoint)
-        self.task_yolo_checkpoint = str(paths.get("yolo_checkpoint") or "")
+        if resume and resume.is_file():
+            if int(payload.get("frame_count", -1)) != int(self.player.frame_count):
+                raise ValueError("Saved work frame count differs from this video")
+            if abs(float(payload.get("fps", -1))-float(self.player.frame_rate)) > 0.01:
+                raise ValueError("Saved work FPS differs from this video")
         self._load_annotations_v2(payload, annotation_path=str(annotation))
         self.current_annotation_path = str(resume or annotation)
         self._task_resume_path = str(resume) if resume else ""
@@ -14454,6 +14462,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             return
         self.current_annotation_path = ""
         self._task_resume_path = ""
+        self._task_trial_id = ""
         try:
             task_loaded = self._auto_load_task_bundle(fp)
         except Exception as exc:
@@ -18884,7 +18893,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
 
         payload = {
             "version": "HOI-1.1-ActionSeg",
-            "video_id": base,
+            "video_id": getattr(self, "_task_trial_id", "") or base,
             "video_path": self._portable_path_token(self.video_path),
             "participant_code": self._normalized_participant_code(),
             "experiment_mode": self._experiment_mode_key(),
