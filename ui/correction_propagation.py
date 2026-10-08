@@ -22,7 +22,7 @@ class CorrectionPropagationMixin:
         if not event_start <= start < event_end:
             QMessageBox.information(self,"Track","The corrected frame must be inside the selected event and before End."); return
         # The actual current-frame box, not a stale selection from another frame.
-        candidates=[b for b in self.raw_boxes if b.get("id")==anchor.get("id") and int(b.get("orig_frame",-1))+int(self.start_offset)==start]
+        candidates=[b for b in self.raw_boxes if b.get("id")==anchor.get("id") and not self._normalize_hand_label(b.get("label")) and int(b.get("orig_frame",-1))+int(self.start_offset)==start]
         if len(candidates)!=1:
             QMessageBox.information(self,"Track","Select or draw one unambiguous box with this ID on the current frame."); return
         anchor=candidates[0]

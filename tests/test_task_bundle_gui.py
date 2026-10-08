@@ -34,4 +34,19 @@ with tempfile.TemporaryDirectory() as d:
  manifest['frame_count']=99;(r/'task.json').write_text(json.dumps(manifest))
  try:w._auto_load_task_bundle(str(r/'video.mp4'));raise AssertionError('mismatch accepted')
  except ValueError:pass
- print('TASK_GUI_AUTOLOAD_AND_TIMELINE_GUARD_PASS')
+ from unittest.mock import patch
+ from PyQt5.QtCore import QProcess
+ from PyQt5.QtWidgets import QInputDialog
+ w.player.current_frame=0;w.start_offset=0
+ w.raw_boxes=[dict(id=0,orig_frame=0,label='Left_hand',x1=1,y1=2,x2=10,y2=12),dict(id=0,orig_frame=0,label='part',x1=15,y1=15,x2=40,y2=45)]
+ w._selected_edit_box=w.raw_boxes[1]
+ w._selected_hand_data=lambda:dict(interaction_start=0,interaction_end=2)
+ started=[]
+ def capture_start(process,executable,arguments):
+  started.append(json.loads(Path(arguments[1]).read_text(encoding='utf-8')))
+ with patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):
+  w._start_correction_propagation()
+ assert len(started)==1 and started[0]['id']==0
+ assert started[0]['bbox']==[15,15,40,45]
+ w._correction_process.finished.emit(1,QProcess.NormalExit)
+ print('TASK_GUI_AUTOLOAD_TIMELINE_IDENTITY_AND_CORRECTION_NAMESPACE_PASS')
