@@ -48,6 +48,10 @@ from ui.assembly_editor import AssemblyEditorMixin
 from ui.frame_review import FrameReviewMixin
 from core.assembly_timeline import validate_timeline, resolve_object, noun_at, state_at
 from core.noun_aliases import normalize_noun_aliases
+from core.anomaly_attributes import normalize as normalize_attributes, export_review, display_value, is_positive
+from ui.attribute_selector import AttributeSelector
+from ui.annotation_policy import AnnotationPolicyMixin, onset_resolved
+from core.frame_review import valid_record
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QTimer, QEvent
 from PyQt5.QtWidgets import QStyle
 from PyQt5.QtGui import QKeySequence, QColor, QPixmap
@@ -116,7 +120,7 @@ from core.videomae_v2_logic import (
 
 _NO_FIELD_VALUE = object()
 from core.project_profile import PROFILE as _PROJECT_PROFILE
-_DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "normal"))
+_DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "unreviewed"))
 _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
 _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
 
@@ -1029,7 +1033,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
+class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -1313,6 +1317,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         self.act_shared_assembly = self.file_menu.addAction("Shared assembly...", self._open_assembly_editor)
         self.file_menu.addAction("Use independent Object for selected hand", self._unlink_shared_assembly)
         self._install_frame_review()
+        self._install_annotation_policy()
         self.act_frame_review_status=self.file_menu.addAction("Frame review: no active event")
         self.act_frame_review_status.setEnabled(False)
 
@@ -1687,7 +1692,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         instrument_label.setObjectName("instrumentFieldLabel")
         link_form.addRow(instrument_label, self.combo_instrument)
         self._instrument_form_label = instrument_label
-        self.combo_anomaly = QComboBox()
+        self.combo_anomaly = AttributeSelector()
         self._populate_anomaly_combo(self.combo_anomaly)
         anomaly_label = QLabel("Anomaly")
         anomaly_label.setObjectName("anomalyFieldLabel")
@@ -2108,7 +2113,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         inline_extra_form.addWidget(self.combo_inline_instrument, 1)
         self.lbl_inline_anomaly = QLabel("Anomaly")
         inline_extra_form.addWidget(self.lbl_inline_anomaly)
-        self.combo_inline_anomaly = QComboBox()
+        self.combo_inline_anomaly = AttributeSelector()
         self.combo_inline_anomaly.setMinimumWidth(220)
         self._populate_anomaly_combo(self.combo_inline_anomaly)
         self.combo_inline_anomaly.activated[int].connect(
@@ -8618,41 +8623,10 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         return super().eventFilter(obj, event)
 
     def _normalize_anomaly_label(self, value: Any) -> str:
-        if isinstance(value, dict):
-            for key in ("name", "label", "type", "anomaly_label", "anomaly_type"):
-                if key in value:
-                    label = self._normalize_anomaly_label(value.get(key))
-                    if label:
-                        return label
-            return _DEFAULT_ANOMALY_LABEL
-        if isinstance(value, (list, tuple, set)):
-            for item in value:
-                label = self._normalize_anomaly_label(item)
-                if label and label != _DEFAULT_ANOMALY_LABEL:
-                    return label
-            return _DEFAULT_ANOMALY_LABEL
-        text = str(value or "").strip()
-        if not text:
-            return _DEFAULT_ANOMALY_LABEL
-        if re.search(r"[,;|]", text):
-            for part in re.split(r"[,;|]+", text):
-                label = self._normalize_anomaly_label(part)
-                if label and label != _DEFAULT_ANOMALY_LABEL:
-                    return label
-            return _DEFAULT_ANOMALY_LABEL
-        keys = set(_anomaly_label_lookup_keys(text))
-        for option in _ANOMALY_LABEL_OPTIONS:
-            if keys.intersection(_anomaly_label_lookup_keys(option)):
-                return option
-        for key in keys:
-            alias = _ANOMALY_LABEL_ALIASES.get(key)
-            if alias:
-                return alias
-        return text
+        return normalize_attributes(value, _PROJECT_PROFILE)
 
     def _is_anomalous_label(self, value: Any) -> bool:
-        text = self._normalize_anomaly_label(value).strip().lower()
-        return bool(text and text != _DEFAULT_ANOMALY_LABEL.lower())
+        return is_positive(value, _PROJECT_PROFILE)
 
     def _remember_anomaly_label(self, value: Any) -> str:
         label = self._normalize_anomaly_label(value)
@@ -8661,15 +8635,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         return label
 
     def _anomaly_label_options(self) -> List[str]:
-        ordered = list(_ANOMALY_LABEL_OPTIONS)
-        seen = {label.lower(): label for label in ordered}
-        for label in sorted(getattr(self, "_known_anomaly_labels", set()) or set()):
-            norm = str(label or "").strip()
-            if not norm or norm.lower() in seen:
-                continue
-            seen[norm.lower()] = norm
-            ordered.append(norm)
-        return ordered
+        return [x for x in _ANOMALY_LABEL_OPTIONS if x not in ('normal','unreviewed','unknown')]
 
     def _populate_anomaly_combo(
         self,
@@ -8679,6 +8645,10 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         if combo is None:
             return
         selected_label = self._remember_anomaly_label(selected)
+        if isinstance(combo, AttributeSelector):
+            combo.setOptions(self._anomaly_label_options(), selected_label,
+                             _PROJECT_PROFILE.get('anomaly_display_names', {}))
+            return
         was_blocked = combo.blockSignals(True)
         try:
             combo.clear()
@@ -8865,7 +8835,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                 continue
             onset = h.get("functional_contact_onset", s)
             verb = h.get("verb", "")
-            base_color = self._hoi_color_for_verb(verb)
+            base_color = QColor("#16a34a" if self._hand_completion_state(h, hand_key=hand_key).get("complete") else "#dc2626")
             segs.append(
                 {
                     "event_id": ev.get("event_id"),
@@ -8977,70 +8947,22 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         }
         return mapping.get(self._canonical_query_field_name(field_name), str(field_name or ""))
 
-    def _bbox_completion_state(
-        self,
-        hand_key: Optional[str],
-        hand_data: Optional[dict],
-    ) -> Dict[str, Any]:
-        state = {
-            "missing": [],
-            "details": [],
-            "missing_roles": {},
-        }
+    def _bbox_completion_state(self, hand_key, hand_data):
+        state = {'missing': [], 'details': [], 'missing_roles': {}}
         if not hand_key or not isinstance(hand_data, dict):
             return state
-        keyframe_labels: Dict[int, List[str]] = {}
-        for field_name, label in (
-            ("interaction_start", "start"),
-            ("functional_contact_onset", "onset"),
-            ("interaction_end", "end"),
-        ):
-            value = hand_data.get(field_name)
-            try:
-                frame = int(value) if value is not None else None
-            except Exception:
-                frame = None
-            if frame is not None:
-                keyframe_labels.setdefault(frame, []).append(label)
-
-        hand_missing = []
-        for frame, labels in keyframe_labels.items():
-            if not self._frame_has_raw_hand_label(frame, hand_key):
-                hand_missing.extend(labels)
-        if hand_missing:
-            state["missing"].append("hand bbox")
-            state["details"].append(
-                "hand bbox missing on " + "/".join(hand_missing)
-            )
-            state["missing_roles"]["hand"] = list(hand_missing)
-
-        sparse_state = self._compute_sparse_evidence_state(hand_data)
-        role_missing: Dict[str, List[str]] = {}
-        for row in list((sparse_state or {}).values()):
-            if str((row or {}).get("status") or "").strip().lower() != "missing":
+        for field, label in (('interaction_start','start'),('functional_contact_onset','onset'),('interaction_end','end')):
+            frame = hand_data.get(field)
+            if type(frame) is not int:
                 continue
-            role = str((row or {}).get("role") or "").strip()
-            time_label = str((row or {}).get("time_label") or "").strip().lower()
-            if not role or not time_label:
-                continue
-            role_missing.setdefault(role, []).append(time_label)
-
-        noun_value = self._hand_noun_object_id(hand_data)
-        if noun_value is not None and role_missing.get("noun"):
-            state["missing"].append("noun bbox")
-            state["details"].append(
-                "noun bbox missing on " + "/".join(role_missing["noun"])
-            )
-            state["missing_roles"]["noun"] = list(role_missing["noun"])
-
-        instrument_value = self._hand_instrument_object_id(hand_data)
-        if instrument_value is not None and role_missing.get("instrument"):
-            state["missing"].append("instrument bbox")
-            state["details"].append(
-                "instrument bbox missing on "
-                + "/".join(role_missing["instrument"])
-            )
-            state["missing_roles"]["instrument"] = list(role_missing["instrument"])
+            for entity in self._review_entities(hand_data, hand_key, frame):
+                records = getattr(self, 'frame_review', {}).get(str(frame), {})
+                if valid_record(records.get(entity), self._boxes_for_review(entity, frame)):
+                    continue
+                role = 'hand' if entity.startswith('H:') else 'instrument' if entity == 'O:'+str(self._hand_instrument_object_id(hand_data)) else 'noun'
+                state['missing_roles'].setdefault(role, []).append(label)
+        state['missing'] = [role+' bbox review' for role in state['missing_roles']]
+        state['details'] = [role+': '+', '.join(labels) for role, labels in state['missing_roles'].items()]
         return state
 
     def _hand_completion_state(
@@ -9086,7 +9008,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         missing = []
         if start_value is None or end_value is None:
             missing.append("start/end")
-        if onset_value is None:
+        if onset_value is None and not onset_resolved(hand_data):
             missing.append("onset")
         if not verb_value:
             missing.append("verb")
@@ -9122,6 +9044,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             if str(field_state.get("status") or "").strip().lower() == "suggested":
                 suggested_fields.append(field_name)
 
+        missing.extend(self._policy_missing(hand_data) if has_data else [])
         state.update(
             {
                 "has_data": has_data,
@@ -10324,7 +10247,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         if not isinstance(profile_data, dict):
             raise ValueError("Invalid task project profile")
         activate_project_profile(profile)
-        _DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "normal"))
+        _DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "unreviewed"))
         _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
         _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
         self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
@@ -10355,7 +10278,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             raise ValueError("Task requires editor-format annotations; review.json is retained separately")
         if payload.get("video_id") and str(payload["video_id"]) != str(data.get("trial_id")):
             raise ValueError("Annotation identity differs from the task")
-        if resume and resume.is_file():
+        if annotation and annotation.is_file():
             if int(payload.get("frame_count", -1)) != int(self.player.frame_count):
                 raise ValueError("Saved work frame count differs from this video")
             if abs(float(payload.get("fps", -1))-float(self.player.frame_rate)) > 0.01:
@@ -12570,6 +12493,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         if start_new_clip_session:
             self._flush_live_operation_logs(warn_user=False)
 
+        self._annotation_provenance = {}
         self.frame_review = {}
         self.shared_assembly = {"schema":"shared-assembly-1","states":[]}
         self._assembly_default_reference = False
@@ -17544,7 +17468,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
 
     def _collect_incomplete_hoi(self) -> List[dict]:
         from core.completion_review import collect_review_issues
-        return self._frame_review_issues() + collect_review_issues(
+        return self._frame_review_issues() + self._policy_review_issues() + collect_review_issues(
             self.events, self.actors_config,
             lambda data, hand: self._hand_completion_state(data, hand_key=hand),
             object_ids=set(self.global_object_map.values()),
@@ -18033,6 +17957,14 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
 
     def _load_annotations_v2(self, data: dict, annotation_path: str = ""):
         """Load unified per-hand event format."""
+        from core.annotation_migration import adapt_annotation
+        archive = None
+        if data.get('schema') != 'hoi-annotation' and annotation_path and os.path.isfile(annotation_path):
+            from core.annotation_archive import archive_source
+            archive = archive_source(annotation_path)
+        data = adapt_annotation(data, _PROJECT_PROFILE)
+        self._annotation_provenance = copy.deepcopy(data.get('provenance', {}))
+        if archive:self._annotation_provenance['original_archive'] = archive
         data = normalize_noun_aliases(data)
         self._clear_undo_history()
         default_actors_config = [
@@ -18305,15 +18237,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                 )
             instrument_id = _safe_int(instrument_id, None)
 
-            anomaly_label = self._remember_anomaly_label(
-                event.get("anomaly_label")
-                or event.get("anomaly_type")
-                or (
-                    _ANOMALY_LABEL_OPTIONS[0]
-                    if bool(event.get("has_anomaly")) and not event.get("anomaly_label")
-                    else _DEFAULT_ANOMALY_LABEL
-                )
-            )
+            anomaly_label = self._remember_anomaly_label(display_value(event, _PROJECT_PROFILE))
 
             start = _safe_int(s, 0)
             end = _safe_int(e, start)
@@ -18343,6 +18267,11 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             if hand_key:
                 hoi_data[hand_key] = self._ensure_hand_annotation_state(
                     {
+                        "_event_extra": {k: copy.deepcopy(event[k]) for k in (
+                            "event_uid", "machine_event_uid", "anomaly_evidence", "migration_review",
+                            "local_outcome", "retry_of_event_id", "onset_review_state", "onset_reason"
+                        ) if k in event},
+                        "_source_event_id": event.get("event_id"),
                         "required_review_frames": list(event.get("required_review_frames",[])),
                         "_onset_manually_adjusted": bool(event.get("onset_manually_adjusted",False)),
                         "shared_assembly_ref": bool(event.get("shared_assembly_ref",False)),
@@ -18739,13 +18668,14 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
 
                 counts[hand_key] += 1
                 prefix = self._get_actor_short_label(hand_key)
-                event_id = f"{prefix}_{counts[hand_key]:03d}"
+                event_id = h_data.get("_source_event_id") or f"{prefix}_{counts[hand_key]:03d}"
 
                 final_start = s if s is not None else global_start
-                final_onset = o if o is not None else global_start
+                final_onset = o
                 final_end = e if e is not None else global_end
 
                 event_entry = {
+                    **copy.deepcopy(h_data.get("_event_extra", {})),
                     "event_id": event_id,
                     "start_frame": final_start,
                     "contact_onset_frame": final_onset,
@@ -18754,7 +18684,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                     "target_object_id": target,
                     "instrument_object_id": instrument,
                     "tool_object_id": instrument,
-                    "anomaly_label": anomaly_label,
+                    **export_review(anomaly_label, _PROJECT_PROFILE),
                     "has_anomaly": bool(has_anomaly),
                     "annotation_state": {
                         "field_state": self._export_field_state_aliases(
@@ -18769,6 +18699,9 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                     },
                 }
 
+                if final_onset is not None:
+                    event_entry.pop('onset_review_state',None)
+                    event_entry.pop('onset_reason',None)
                 if has_verb:
                     event_entry["verb"] = verb
                 else:
@@ -18892,7 +18825,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
             }
 
         payload = {
-            "version": "HOI-1.1-ActionSeg",
+            "schema": "hoi-annotation",
             "video_id": getattr(self, "_task_trial_id", "") or base,
             "video_path": self._portable_path_token(self.video_path),
             "participant_code": self._normalized_participant_code(),
@@ -18918,6 +18851,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
                 "tracks_summary": handtrack_summary,
             },
         }
+        payload['provenance'] = copy.deepcopy(getattr(self, '_annotation_provenance', {}))
         payload["frame_review"] = copy.deepcopy(getattr(self,"frame_review",{}))
         payload["shared_assembly"] = validate_timeline(self._assembly_data())
         payload["assembly_default_reference"] = getattr(self,"_assembly_default_reference",False)
@@ -21630,7 +21564,7 @@ class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixi
         else:
             anomaly_label = self._remember_anomaly_label(inline_anomaly_label)
 
-        if verb.casefold()=="hold" and (not existing_verb.strip() or hand_data.get("functional_contact_onset") is None) and not hand_data.get("_onset_manually_adjusted") and type(hand_data.get("interaction_start")) is int:
+        if verb.casefold()=="hold" and (not existing_verb.strip() or hand_data.get("functional_contact_onset") is None) and not onset_resolved(hand_data) and not hand_data.get("_onset_manually_adjusted") and type(hand_data.get("interaction_start")) is int:
             hand_data["functional_contact_onset"]=hand_data["interaction_start"]
         hand_data["verb"] = verb
         hand_data["target_object_id"] = target_id

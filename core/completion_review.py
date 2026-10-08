@@ -78,6 +78,8 @@ def collect_review_issues(events, actors, completion_for_hand, object_ids=None, 
 
             for key, label in TIMES.items():
                 value = data.get(key)
+                if value is None and key == 'functional_contact_onset' and ((data.get('_event_extra') or data).get('onset_review_state') in ('unknown','no_contact')) and str((data.get('_event_extra') or data).get('onset_reason','')).strip():
+                    continue
                 if value is None:
                     add(key, 'missing', 'Review missing ' + label,
                         fallback if key == 'interaction_start' else default_frame)

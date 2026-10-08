@@ -14,13 +14,13 @@ def validate_timeline(data):
         seen.add(f)
         if type(s.get('object_id')) is not int or s['object_id'] < 0: raise ValueError('Invalid object ID')
         parts = s.get('components')
-        if not isinstance(parts, list) or not parts or any(not isinstance(x,str) or not x.strip() or x == 'assembly' for x in parts):
+        if not isinstance(parts, list) or (not parts and s.get('composition_review_state')!='unknown') or any(not isinstance(x,str) or not x.strip() or x == 'assembly' for x in parts):
             raise ValueError('Select at least one concrete component')
         if len(parts) != len(set(parts)): raise ValueError('Duplicate components')
         interfaces=s.get('interfaces',{})
         if not isinstance(interfaces,dict):raise ValueError('Invalid interfaces')
         for key,slots in interfaces.items():
-            if not isinstance(key,str) or not key or not isinstance(slots,dict) or set(slots) != {'1','2'} or any(type(v) is not bool for v in slots.values()):
+            if not isinstance(key,str) or not key or not isinstance(slots,dict) or set(slots) != {'1','2'} or any(v is not None and type(v) is not bool for v in slots.values()):
                 raise ValueError('Each interface needs fixed slots 1 and 2')
     return deepcopy(data)
 

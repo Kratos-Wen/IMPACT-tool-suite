@@ -24,4 +24,7 @@ with tempfile.TemporaryDirectory(prefix='SAM CPU space ') as temporary:
  assert result['boxes'] or result['empty_frames'] or result['stop_reason']
  for b in result['boxes']:
   assert 0<=b['x1']<b['x2']<=64 and 0<=b['y1']<b['y2']<=64
+ run(dict(video=str(video),checkpoint=str(checkpoint),config='configs/sam2.1/sam2.1_hiera_s.yaml',device='cpu',cpu_threads=1,start=2,end=0,id=0,bbox=[17,15,42,45]),str(output))
+ backward=json.loads(output.read_text(encoding='utf-8'));assert backward['requested_end']==0
+ assert all(0<=row['frame']<2 for row in backward['boxes'])
  print('REAL_SAM_CPU_INFERENCE_PASS',sys.platform,round(result['elapsed_seconds'],2))

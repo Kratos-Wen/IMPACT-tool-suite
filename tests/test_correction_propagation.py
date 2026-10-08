@@ -24,3 +24,12 @@ for version in ('',):
  for path in ('core/correction_propagation.py','tools/sam2_correction_worker.py','ui/correction_propagation.py','ui/hoi_window.py'):ast.parse((root/version/path).read_text(encoding="utf-8"))
  results[version]=dict(instance_id_zero=True,other_instances_preserved=True,hand_namespace_collision_preserved=True,anchor_preserved=True,stop_before_human_anchor=True,empty_mask_removes_auto_box=True,proposal_not_human_verified=True,source_not_mutated=True,invalid_predictions_rejected=True,syntax=True,model_inference_tested=False)
 print(json.dumps(results))
+# Backward requests preserve earlier human anchors and exclude the seed frame.
+back_anchor=dict(id=42,label='part',orig_frame=10,x1=1,y1=2,x2=10,y2=12,source='manual')
+back_boxes=[dict(back_anchor,orig_frame=3),back_anchor,dict(back_anchor,orig_frame=8,source='model',human_verified=False)]
+back=m.plan(back_boxes,back_anchor,10,0)
+assert back['end']==4 and back['direction']==-1
+updated=m.apply(back_boxes,back,[dict(frame=5,x1=2,y1=2,x2=12,y2=14)])
+assert any(b['orig_frame']==3 for b in updated) and any(b['orig_frame']==10 for b in updated)
+assert not any(b['orig_frame']==8 for b in updated)
+print('BACKWARD_PROPAGATION_ANCHOR_BOUNDARIES_PASS')

@@ -28,3 +28,4 @@ jobs:
       - run: python tests/test_noun_aliases.py
       - run: python tests/test_task_assets.py
       - run: python tests/test_task_bundle_gui.py
+      - run: python tests/test_current_annotation.py

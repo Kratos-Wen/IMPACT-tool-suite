@@ -4,6 +4,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDialog,QVBoxLayout,QLabel,QSpinBox,QComboBox,QListWidget,QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox,QPushButton
 from core.assembly_timeline import state_at,put_state,noun_at,validate_timeline
 from core.project_profile import PROFILE
+from core.annotation_migration import model_from_trial
 
 class AssemblyEditorMixin:
     def _unlink_shared_assembly(self):
@@ -41,22 +42,32 @@ class AssemblyEditorMixin:
         index=objects.findData(initial.get('object_id'));objects.setCurrentIndex(max(0,index));layout.addWidget(objects)
         parts=QListWidget();layout.addWidget(parts)
         names=set(PROFILE.get('assembly_components',[])) | set(initial.get('components',[]))
-        names.update(self.id_to_category.values());names.discard('assembly')
+        names.discard('assembly')
+        model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
+        forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
         for name in sorted(x for x in names if isinstance(x,str) and x and 'hand' not in x.lower()):
             item=QListWidgetItem(name);item.setFlags(item.flags()|Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked if name in initial.get('components',[]) else Qt.Unchecked);parts.addItem(item)
+            item.setCheckState(Qt.Checked if name in initial.get('components',[]) else Qt.Unchecked)
+            if name in forbidden:
+                item.setCheckState(Qt.Unchecked);item.setFlags(item.flags() & ~Qt.ItemIsEnabled);item.setToolTip('Unavailable for this model')
+            parts.addItem(item)
         specs=PROFILE.get('assembly_interfaces',[])
         table=QTableWidget(len(specs),3);table.setHorizontalHeaderLabels(['Interface','Slot 1 secured','Slot 2 secured']);layout.addWidget(table)
         for row,spec in enumerate(specs):
             cell=QTableWidgetItem(spec['id']);cell.setFlags(cell.flags() & ~Qt.ItemIsEditable);table.setItem(row,0,cell)
             for col,key in ((1,'1'),(2,'2')):
-                check=QCheckBox();check.setChecked(initial.get('interfaces',{}).get(spec['id'],{}).get(key,False));table.setCellWidget(row,col,check)
+                check=QCheckBox();check.setTristate(True)
+                value=initial.get('interfaces',{}).get(spec['id'],{}).get(key)
+                check.setCheckState(Qt.PartiallyChecked if value is None else Qt.Checked if value else Qt.Unchecked)
+                check.setToolTip('Checked: secured; unchecked: not secured; dash: unknown')
+                table.setCellWidget(row,col,check)
         layout.addWidget(QLabel('Slots follow the fixed reference orientation, never the current camera view.'))
-        link=QCheckBox('Use this shared Object for both hands in the current event and for new events');link.setChecked(True);layout.addWidget(link)
+        link=QCheckBox('Use shared Object for the selected hand and new events');link.setChecked(True);layout.addWidget(link)
+        both=QCheckBox('Also use shared Object for the other participating hand');layout.addWidget(both)
         buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel);layout.addWidget(buttons);buttons.rejected.connect(dlg.reject)
         def accept():
             components=[parts.item(i).text() for i in range(parts.count()) if parts.item(i).checkState()==Qt.Checked]
-            interfaces={spec['id']:{key:table.cellWidget(row,col).isChecked() for col,key in ((1,'1'),(2,'2'))} for row,spec in enumerate(specs)}
+            interfaces={spec['id']:{key:(None if table.cellWidget(row,col).checkState()==Qt.PartiallyChecked else table.cellWidget(row,col).isChecked()) for col,key in ((1,'1'),(2,'2'))} for row,spec in enumerate(specs)}
             try:
                 for spec in specs:
                     if spec.get('completed_component') in components and spec.get('base_component') in components and not all(interfaces[spec['id']].values()):
@@ -65,7 +76,7 @@ class AssemblyEditorMixin:
                 if uid is None:
                     used=set(self.global_object_map.values())|{b.get('id') for b in self.raw_boxes if isinstance(b.get('id'),int)}
                     uid=max([int(self.object_id_counter),*(x+1 for x in used if type(x) is int)],default=0)
-                updated=put_state(data,dict(frame=frame.value(),object_id=uid,components=components,interfaces=interfaces))
+                updated=put_state(data,dict(frame=frame.value(),object_id=uid,components=components,interfaces=interfaces,composition_review_state='reviewed'))
             except ValueError as exc:QMessageBox.warning(dlg,'Invalid assembly',str(exc));return
             self._push_undo();self.shared_assembly=updated;self._assembly_default_reference=link.isChecked()
             reviews=deepcopy(getattr(self,'frame_review',{}))
@@ -86,10 +97,14 @@ class AssemblyEditorMixin:
                     start=hand.get('interaction_start')
                     current=state_at(updated,start if type(start) is int else frame.value())
                     hand['noun_object_id']=hand['target_object_id']=current['object_id'] if current else None
-            for hand in self.event_draft.values():link_hand(hand)
+            def selected(label,hand):
+                return label==self.selected_hand_label or (both.isChecked() and bool(hand.get('verb') or hand.get('interaction_start') is not None))
+            for label,hand in self.event_draft.items():
+                if selected(label,hand):link_hand(hand)
             for event in self.events:
                 if event.get('event_id')==self.selected_event_id:
-                    for hand in event.get('hoi_data',{}).values():link_hand(hand)
+                    for label,hand in event.get('hoi_data',{}).items():
+                        if selected(label,hand):link_hand(hand)
             self._refresh_boxes_for_frame(self.player.current_frame)
             if self.selected_hand_label:self._load_hand_draft_to_ui(self.selected_hand_label)
             self._bump_query_state_revision();dlg.accept()

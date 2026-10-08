@@ -1,9 +1,7 @@
 # Validation
 
-The single application retains the correction worker, event filtering, instance-ID preservation, anchor protection and undo support exercised in earlier component tests. Optional adapter loading now handles a missing runtime without repeatedly loading a failing package.
+Desktop CI covers Linux, Windows and macOS with real Qt construction and task import. CPU SAM inference runs separately on a synthetic clip in both temporal directions.
 
-Source parsing and the current core regression checks pass. The Linux original main window starts and imports a sample video with its event and box records in an offscreen smoke test; Qt multimedia emits GStreamer warnings in this cluster environment, so this does not certify desktop playback or interaction. A short real-video inference and an isolated Qt acceptance/undo flow were previously tested. A complete original-main-window workflow, full-dataset tracking quality and Windows/macOS installations have not been certified. Cross-platform instructions are provided without claiming these deployments have been tested.
+Regression checks cover multilabel review, unknown contact, source archiving, composition changes, instance namespaces, review coverage, event filtering, correction propagation and undo. The annotation round-trip test repeats 25 save/load cycles without losing IDs, labels, evidence or null contact times.
 
-Project-specific labels, aliases and checks come from local profiles. Frame-coverage gates and post-occlusion identity-management workflows remain incomplete; project requirements are maintained outside this repository.
-
-Native desktop CI now passes on Linux, Windows and Apple Silicon macOS (run 37801727327). This includes real Qt window construction, Unicode/spaced subprocess paths, task asset discovery, draft restoration, task identity on export, and core state/geometry protections. Real industrial-video tracking quality and full mouse/playback workflows remain outside these smoke checks. A separate synthetic-video SAM CPU workflow checks backend installation and inference; its result must be recorded separately from GUI compatibility.
+Automated checks validate software behavior. Industrial-video track accuracy is assessed through human playback and geometry review.

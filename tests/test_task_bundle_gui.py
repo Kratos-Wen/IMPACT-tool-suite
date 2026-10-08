@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory() as d:
  started=[]
  def capture_start(process,executable,arguments):
   started.append(json.loads(Path(arguments[1]).read_text(encoding='utf-8')))
- with patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):
+ with patch.object(QInputDialog,'getItem',return_value=('Following frames',True)),patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):
   w._start_correction_propagation()
  assert len(started)==1 and started[0]['id']==0
  assert started[0]['bbox']==[15,15,40,45]
