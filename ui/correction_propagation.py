@@ -4,6 +4,7 @@ from pathlib import Path
 from PyQt5.QtCore import QProcess
 from PyQt5.QtWidgets import QPushButton, QMessageBox, QInputDialog, QFileDialog, QProgressDialog
 from core.correction_propagation import plan, apply
+from core.assembly_timeline import next_change,state_at
 
 class CorrectionPropagationMixin:
     def _start_correction_propagation(self):
@@ -29,6 +30,12 @@ class CorrectionPropagationMixin:
         following,ok=QInputDialog.getInt(self,"Track corrected instance",f"ID {anchor['id']} — number of following frames ({fps:g} fps):",min(event_end-start,int(10*fps)),1,min(event_end-start,int(30*fps)))
         if not ok:return
         end=start+following
+        change=next_change(self._assembly_data(),start)
+        composition=state_at(self._assembly_data(),start)
+        shared=composition is not None and composition['object_id']==anchor.get('id')
+        if shared and change is not None:end=min(end,change-1)
+        if end<=start:
+            QMessageBox.information(self,'Track','Composition changes on the next frame. Correct the new composition there.');return
         try: request=plan(self.raw_boxes,anchor,start,end,int(self.start_offset))
         except ValueError as exc: QMessageBox.information(self,"Track",str(exc)); return
         checkpoint=os.environ.get("IMPACT_SAM2_CHECKPOINT", "")
@@ -42,6 +49,7 @@ class CorrectionPropagationMixin:
         req=Path(temporary.name)/"request.json"; out=Path(temporary.name)/"result.json"
         req.write_text(json.dumps(request),encoding="utf-8")
         snapshot=copy.deepcopy(self.raw_boxes); video=self.video_path; offset=int(self.start_offset)
+        assembly_snapshot=copy.deepcopy(self._assembly_data())
         process=QProcess(self); self._correction_process=process
         dialog=QProgressDialog(f"Tracking ID {request['id']}: frames {start}–{request['end']} on {device}.\nResults are proposals, not reviewed annotations.","Cancel",0,0,self)
         dialog.setWindowTitle("Correction propagation"); dialog.setMinimumDuration(0)
@@ -53,7 +61,7 @@ class CorrectionPropagationMixin:
             try:
                 if code!=0 or not out.exists():
                     QMessageBox.warning(self,"Tracking failed",bytes(stderr).decode(errors="replace")[-2000:] or "Cancelled / backend not installed.");return
-                if self.video_path!=video or int(self.start_offset)!=offset or self.raw_boxes!=snapshot:
+                if self.video_path!=video or int(self.start_offset)!=offset or self.raw_boxes!=snapshot or self._assembly_data()!=assembly_snapshot:
                     QMessageBox.information(self,"Track","Annotations changed during tracking. Discarded proposals; rerun from the corrected frame.");return
                 result=json.loads(out.read_text(encoding="utf-8"))
                 if not start <= int(result["end"]) <= request["end"]: raise ValueError("Backend returned invalid end frame")

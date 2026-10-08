@@ -36,6 +36,26 @@ class ReviewPlayer(VideoPlayer):
 
 
 class ReviewWindow(QMainWindow):
+    def edit_shared_assembly(self):
+        if not self.doc or not self.require_reviewer() or not self.apply_current():return
+        from assembly_bridge import ReviewAssemblyBridge
+        bridge=ReviewAssemblyBridge(self)
+        bridge._open_assembly_editor()
+        bridge.deleteLater()
+
+    def undo_shared_assembly(self):
+        snapshot=getattr(self,'_assembly_undo',None)
+        if not snapshot or not self.doc:return
+        if snapshot.get('base_snapshot_sha256')!=self.doc.data.get('base_snapshot_sha256'):
+            self._assembly_undo=None;return
+        # Restore assembly-only fields; never undo subsequent verb/box edits.
+        for key in ('shared_assembly','assembly_default_reference'):
+            if key in snapshot:self.doc.data[key]=copy.deepcopy(snapshot[key])
+            else:self.doc.data.pop(key,None)
+        refs={r['event_uid']:r['value'].get('shared_assembly_ref',False) for r in snapshot['events']}
+        for row in self.doc.events:
+            if row['event_uid'] in refs:row['value']['shared_assembly_ref']=refs[row['event_uid']]
+        self._assembly_undo=None;self.dirty=True;self.frame_changed(self.player.current_frame)
     def __init__(self):
         super().__init__()
         # Some cluster Qt installations do not discover system fallback fonts.
@@ -56,6 +76,8 @@ class ReviewWindow(QMainWindow):
         self.reviewer = QLineEdit(); self.reviewer.setMaximumWidth(170); top.addWidget(self.reviewer)
         top.addWidget(button('保存回传文件 Ctrl+S', self.save))
         top.addWidget(button('新增漏标事件', self.add_event))
+        top.addWidget(button('Shared assembly...', self.edit_shared_assembly))
+        top.addWidget(button('Undo assembly change', self.undo_shared_assembly))
         top.addWidget(button('下一处待审核', self.next_pending))
         self.summary = QLabel('打开批次中某段视频的 review.json'); top.addWidget(self.summary, 1)
         self.banner = QLabel('左右始终指操作者本人的左右；帧号从 0 开始，End 为包含的最后一帧。')
@@ -223,6 +245,7 @@ class ReviewWindow(QMainWindow):
         self.hand.setCurrentText(e.get('hand', 'unknown')); self.verb.setCurrentText(e.get('verb') or '')
         self.definition.setText(e.get('novel_verb_definition') or '')
         for key, combo in self.ids.items(): combo.setCurrentText(e.get(key) or '')
+        self.ids['object_instance_id'].setEnabled(not e.get('shared_assembly_ref',False))
         for key, field in self.fields.items(): field.setValue(e[key] if type(e.get(key)) is int else -1)
         self.intervals.setPlainText(json.dumps(e.get('boundary_intervals', []), ensure_ascii=False))
         self.truncated_start.setChecked(bool(e.get('truncated_at_window_start')))
@@ -287,6 +310,16 @@ class ReviewWindow(QMainWindow):
         if self.current_index >= 0:
             event = self.doc.events[self.current_index]['value']
             selected_ids = {w.currentText().split(' | ', 1)[0].strip() for w in self.ids.values()}
+            if event.get('shared_assembly_ref'):
+                from core.assembly_timeline import state_at
+                state=state_at(self.doc.data.get('shared_assembly',{}),frame)
+                old=event.get('object_instance_id')
+                selected_ids.discard(old)
+                if state:selected_ids.add(f"EGO_T{state['object_id']:06d}")
+                self.ids['object_instance_id'].blockSignals(True)
+                self.ids['object_instance_id'].setCurrentText(f"EGO_T{state['object_id']:06d}" if state else '')
+                self.ids['object_instance_id'].setEnabled(False)
+                self.ids['object_instance_id'].blockSignals(False)
         displayed = []
         for uid, t in boxes.items():
             b = t.get('bbox_xyxy'); meta = self.doc.instance(uid, frame)
@@ -388,6 +421,7 @@ class ReviewWindow(QMainWindow):
     def add_event(self):
         if not self.doc or not self.apply_current() or not self.require_reviewer(): return
         row = self.doc.add_event(self.player.current_frame, self.reviewer.text().strip())
+        if self.doc.data.get('assembly_default_reference'):row['value']['shared_assembly_ref']=True
         self.event_list.addItem(self.event_label(row)); self.dirty = True
         self.event_list.setCurrentRow(len(self.doc.events) - 1); self.tabs.setCurrentIndex(0); self.refresh_summary()
 

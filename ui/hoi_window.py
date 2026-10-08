@@ -44,6 +44,8 @@ from PyQt5.QtWidgets import (
 )
 from ui.mixins import FrameControlMixin
 from ui.correction_propagation import CorrectionPropagationMixin
+from ui.assembly_editor import AssemblyEditorMixin
+from core.assembly_timeline import validate_timeline, resolve_object, noun_at, state_at
 from core.noun_aliases import normalize_noun_aliases
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QTimer, QEvent
 from PyQt5.QtWidgets import QStyle
@@ -1026,7 +1028,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
+class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -1307,6 +1309,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
         )
         import_menu.addSeparator()
         self.act_load_annotations = import_menu.addAction("HOI Annotations...", self._load_annotations_json)
+        self.act_shared_assembly = self.file_menu.addAction("Shared assembly...", self._open_assembly_editor)
+        self.file_menu.addAction("Use independent Object for selected hand", self._unlink_shared_assembly)
 
         detect_menu = self.file_menu.addMenu("Detection")
         self.detect_menu = detect_menu
@@ -9172,7 +9176,7 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
     def _hand_noun_object_id(self, hand_data: Optional[dict]) -> Optional[int]:
         if not isinstance(hand_data, dict):
             return None
-        return hand_data.get("noun_object_id", hand_data.get("target_object_id"))
+        return resolve_object(hand_data, self._assembly_data(), self._assembly_frame())
 
     def _hand_instrument_object_id(self, hand_data: Optional[dict]) -> Optional[int]:
         if not isinstance(hand_data, dict):
@@ -12402,6 +12406,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
 
     def _workspace_has_annotation_state(self) -> bool:
         return bool(
+            self._assembly_data().get('states')
+            or
             list(getattr(self, "events", []) or [])
             or list(getattr(self, "raw_boxes", []) or [])
             or str(getattr(self, "current_annotation_path", "") or "").strip()
@@ -12489,6 +12495,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
         if start_new_clip_session:
             self._flush_live_operation_logs(warn_user=False)
 
+        self.shared_assembly = {"schema":"shared-assembly-1","states":[]}
+        self._assembly_default_reference = False
         self.events.clear()
         self.raw_boxes = []
         self._suppressed_hand_boxes = []
@@ -13241,6 +13249,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
     def _snapshot_state(self) -> dict:
         """Capture a deep copy of event + bbox state for undo/redo."""
         return {
+            "shared_assembly": copy.deepcopy(self._assembly_data()),
+            "assembly_default_reference": getattr(self,"_assembly_default_reference",False),
             "events": copy.deepcopy(self.events),
             "event_id_counter": self.event_id_counter,
             "event_draft": copy.deepcopy(self.event_draft),
@@ -13269,6 +13279,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
 
     def _restore_state(self, state: dict):
         """Restore a snapshot created by _snapshot_state."""
+        self.shared_assembly = validate_timeline(state.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
+        self._assembly_default_reference = state.get("assembly_default_reference",False)
         self.events = copy.deepcopy(state.get("events", []))
         self.event_id_counter = state.get("event_id_counter", 0)
         self.event_draft = copy.deepcopy(state.get("event_draft", {}))
@@ -17948,7 +17960,13 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
             sortable.sort(key=lambda item: item[0])
             return [raw_key for _num, raw_key in sortable]
 
+        # Validate shared state before clearing existing annotations.
+        shared = validate_timeline(data.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
+        if any(x["frame"] >= int(data.get("frame_count", self.player.frame_count)) for x in shared["states"]):
+            raise ValueError("Shared assembly state is outside the video")
         # Reset state
+        self.shared_assembly = shared
+        self._assembly_default_reference = bool(data.get("assembly_default_reference",False))
         self.events.clear()
         self.event_id_counter = 0
         self.raw_boxes = []
@@ -18232,6 +18250,7 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
             if hand_key:
                 hoi_data[hand_key] = self._ensure_hand_annotation_state(
                     {
+                        "shared_assembly_ref": bool(event.get("shared_assembly_ref",False)),
                         "verb": verb,
                         "target_object_id": target_id,
                         "noun_object_id": target_id,
@@ -18607,7 +18626,7 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
                 self._ensure_hand_annotation_state(h_data)
 
                 verb = self._canonical_label_name(h_data.get("verb", ""))
-                target = self._hand_noun_object_id(h_data)
+                target = resolve_object(h_data, self._assembly_data(), int(h_data.get("interaction_start") if h_data.get("interaction_start") is not None else event.get("frames",[0])[0]))
                 instrument = self._hand_instrument_object_id(h_data)
                 anomaly_label = self._normalize_anomaly_label(h_data.get("anomaly_label"))
                 has_anomaly = self._is_anomalous_label(anomaly_label)
@@ -18616,7 +18635,7 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
                 e = h_data.get("interaction_end")
 
                 has_verb = bool(verb and verb.strip())
-                has_objects = target is not None or instrument is not None
+                has_objects = (target is not None and not h_data.get('shared_assembly_ref')) or instrument is not None
                 has_timestamps = (s is not None) or (o is not None) or (e is not None)
                 has_info = has_verb or has_objects or has_timestamps or has_anomaly
 
@@ -18661,7 +18680,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
                     event_entry["verb"] = ""
 
                 interaction = {}
-                target_label = label_for_id(target)
+                target_label = (noun_at(self._assembly_data(), int(h_data.get("interaction_start") if h_data.get("interaction_start") is not None else event.get("frames",[0])[0])) if h_data.get("shared_assembly_ref") else label_for_id(target))
+                event_entry["shared_assembly_ref"] = bool(h_data.get("shared_assembly_ref",False))
                 if target_label:
                     interaction["target"] = target_label
                     interaction["noun"] = target_label
@@ -18797,11 +18817,14 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
                 "tracks_summary": handtrack_summary,
             },
         }
+        payload["shared_assembly"] = validate_timeline(self._assembly_data())
+        payload["assembly_default_reference"] = getattr(self,"_assembly_default_reference",False)
         payload["editor_geometry"] = {"suppressed_hand_boxes": list(getattr(self, "_suppressed_hand_boxes", []))}
         return payload
 
     # ---------- UI refresh ----------
     def _set_frame_controls(self, frame: int):
+        self._refresh_assembly_caption()
         super()._set_frame_controls(frame)
         if getattr(self, "hoi_timeline", None):
             self.hoi_timeline.set_current_frame(frame)
@@ -19244,7 +19267,7 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
             if not hand_box:
                 continue
 
-            target_id = r.get("noun_object_id", r.get("target_object_id"))
+            target_id = resolve_object(r, self._assembly_data(), frame)
             instrument_id = r.get("instrument_object_id", r.get("tool_object_id"))
             verb = r.get("verb", "unknown")
             try:
@@ -19775,6 +19798,8 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
 
     def _hoi_state_signature(self) -> str:
         payload = {
+            "shared_assembly": self._assembly_data(),
+            "assembly_default_reference": getattr(self,"_assembly_default_reference",False),
             "events": self.events,
             "raw_boxes": self.raw_boxes,
             "event_draft": getattr(self, "event_draft", None),
@@ -20894,7 +20919,7 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
                 )
             return {"removed_labels": 0, "removed_boxes": 0}
 
-        referenced_ids = set()
+        referenced_ids = {s['object_id'] for s in self._assembly_data().get('states',[])}
         for event in list(getattr(self, "events", []) or []):
             hoi_data = dict((event or {}).get("hoi_data") or {})
             for actor in list(getattr(self, "actors_config", []) or []):
@@ -21077,6 +21102,9 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
             )
             return
         current_uid = box.get("id")
+        if any(s['object_id']==current_uid for s in self._assembly_data().get('states',[])):
+            QMessageBox.information(self,'Shared object ID','This ID is referenced by the shared timeline. Select a different shared object in Shared assembly instead of renaming its track ID.')
+            return
 
         curr_name = self._object_name_for_id(current_uid, fallback="Unknown")
 
@@ -21371,6 +21399,12 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
         self.event_draft = {}
         for actor in self.actors_config:
             self.event_draft[actor["id"]] = self._blank_hand_data()
+            if getattr(self,"_assembly_default_reference",False):
+                self.event_draft[actor["id"]]["shared_assembly_ref"] = True
+                current=state_at(self._assembly_data(),self._assembly_frame())
+                if current:
+                    self.event_draft[actor['id']]['noun_object_id']=current['object_id']
+                    self.event_draft[actor['id']]['target_object_id']=current['object_id']
         if hasattr(self, "lbl_event_status"):
             self.lbl_event_status.setText("No event selected.")
 
@@ -21632,6 +21666,9 @@ class HOIWindow(CorrectionPropagationMixin, FrameControlMixin, QWidget):
         self._ensure_hand_annotation_state(hand_data)
 
         self.combo_verb.blockSignals(True)
+        self.combo_target.setEnabled(not hand_data.get('shared_assembly_ref',False))
+        if getattr(self,'combo_inline_noun',None) is not None:
+            self.combo_inline_noun.setEnabled(not hand_data.get('shared_assembly_ref',False))
         self.combo_target.blockSignals(True)
         if getattr(self, "combo_instrument", None) is not None:
             self.combo_instrument.blockSignals(True)

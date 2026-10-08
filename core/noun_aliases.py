@@ -3,7 +3,7 @@ from core.project_profile import PROFILE
 _ALIASES={re.sub(r'[ -]+','_',str(k).strip()).casefold():str(v) for k,v in (PROFILE.get('noun_aliases') or {}).items()}
 _FIELDS={'label','category','noun','target','tool','instrument','object_name','class_name','class_label','noun_class'}
 _MAPS={'class_map','id_to_category','names'}
-_LISTS={'category_candidates','noun_library','object_classes','classes','names'}
+_LISTS={'category_candidates','noun_library','object_classes','classes','names','components'}
 _RAW={'raw_response','raw_model_output','machine_original','machine_snapshot','raw_snapshot','source_record'}
 def _canonical(value, instance=False):
  if not isinstance(value,str):return value
