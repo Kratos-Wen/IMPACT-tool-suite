@@ -45,6 +45,7 @@ from PyQt5.QtWidgets import (
 from ui.mixins import FrameControlMixin
 from ui.correction_propagation import CorrectionPropagationMixin
 from ui.assembly_editor import AssemblyEditorMixin
+from ui.frame_review import FrameReviewMixin
 from core.assembly_timeline import validate_timeline, resolve_object, noun_at, state_at
 from core.noun_aliases import normalize_noun_aliases
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QTimer, QEvent
@@ -1028,7 +1029,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
+class HOIWindow(FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -1311,6 +1312,9 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         self.act_load_annotations = import_menu.addAction("HOI Annotations...", self._load_annotations_json)
         self.act_shared_assembly = self.file_menu.addAction("Shared assembly...", self._open_assembly_editor)
         self.file_menu.addAction("Use independent Object for selected hand", self._unlink_shared_assembly)
+        self._install_frame_review()
+        self.act_frame_review_status=self.file_menu.addAction("Frame review: no active event")
+        self.act_frame_review_status.setEnabled(False)
 
         detect_menu = self.file_menu.addMenu("Detection")
         self.detect_menu = detect_menu
@@ -1835,6 +1839,8 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         self.lbl_review_status.setObjectName("statusSubtle")
         self.lbl_review_status.setWordWrap(True)
         review_status_layout.addWidget(self.lbl_review_status)
+        self.lbl_frame_review_status=QLabel("Frame review: no active event")
+        review_status_layout.addWidget(self.lbl_frame_review_status)
         review_nav_row = QHBoxLayout()
         review_nav_row.setContentsMargins(0, 0, 0, 0)
         review_nav_row.setSpacing(6)
@@ -8457,6 +8463,8 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
             load_shortcut_bindings() if bindings is None else dict(bindings)
         )
         self._shortcut_defaults = default_shortcut_bindings()
+        for sid,(action,key) in getattr(self,"_frame_review_actions",{}).items():
+            action.setShortcut(QKeySequence(shortcut_value(self._shortcut_bindings,self._shortcut_defaults,sid,key)))
         self._set_shortcut_key(getattr(self, "sc_left", None), "hoi.step_prev", "Left")
         self._set_shortcut_key(
             getattr(self, "sc_right", None), "hoi.step_next", "Right"
@@ -9070,7 +9078,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
                 onset_value is not None,
                 end_value is not None,
                 bool(verb_value),
-                noun_value is not None,
+                noun_value is not None and not hand_data.get('shared_assembly_ref'),
                 instrument_value is not None,
                 self._is_anomalous_label(anomaly_label),
             ]
@@ -9126,6 +9134,10 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
                 "complete": bool(has_data and not missing and not suggested_fields),
             }
         )
+        matching={ev['event_id'] for ev in self.events if ev.get('hoi_data',{}).get(hand_key)==hand_data}
+        if not matching and self.selected_event_id is not None:matching={self.selected_event_id}
+        if state['has_data'] and any(i['event_id'] in matching and i['hand']==hand_key for i in self._frame_review_issues()):
+            state['missing'].append('frame review');state['complete']=False
         return state
 
     def _hoi_title_for_hand(self, hand_key: str) -> str:
@@ -12495,6 +12507,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         if start_new_clip_session:
             self._flush_live_operation_logs(warn_user=False)
 
+        self.frame_review = {}
         self.shared_assembly = {"schema":"shared-assembly-1","states":[]}
         self._assembly_default_reference = False
         self.events.clear()
@@ -12606,6 +12619,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         h["interaction_start"] = new_start
         h["interaction_end"] = new_end
         h["functional_contact_onset"] = new_onset
+        if onset_changed:h["_onset_manually_adjusted"]=True
         self._set_hand_field_state(
             h, "interaction_start", source="manual_timeline", status="confirmed"
         )
@@ -13249,6 +13263,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
     def _snapshot_state(self) -> dict:
         """Capture a deep copy of event + bbox state for undo/redo."""
         return {
+            "frame_review": copy.deepcopy(getattr(self,"frame_review",{})),
             "shared_assembly": copy.deepcopy(self._assembly_data()),
             "assembly_default_reference": getattr(self,"_assembly_default_reference",False),
             "events": copy.deepcopy(self.events),
@@ -13279,6 +13294,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
 
     def _restore_state(self, state: dict):
         """Restore a snapshot created by _snapshot_state."""
+        self.frame_review = copy.deepcopy(state.get("frame_review",{}))
         self.shared_assembly = validate_timeline(state.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
         self._assembly_default_reference = state.get("assembly_default_reference",False)
         self.events = copy.deepcopy(state.get("events", []))
@@ -17454,7 +17470,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
 
     def _collect_incomplete_hoi(self) -> List[dict]:
         from core.completion_review import collect_review_issues
-        return collect_review_issues(
+        return self._frame_review_issues() + collect_review_issues(
             self.events, self.actors_config,
             lambda data, hand: self._hand_completion_state(data, hand_key=hand),
             object_ids=set(self.global_object_map.values()),
@@ -17916,7 +17932,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
             try:
                 if not os.path.isfile(entry):
                     raise FileNotFoundError("Install the complete preannotation review update")
-                subprocess.Popen([sys.executable, entry, os.path.abspath(fp)])
+                subprocess.Popen([sys.executable, entry, os.path.abspath(fp)],env=dict(os.environ,IMPACT_SKIP_AUTOMATIC_TRACKS="1" if getattr(self,"skip_auto_tracking_import",False) else "0"))
             except Exception as ex:
                 QMessageBox.warning(self, "Preannotation review", str(ex))
             return
@@ -17965,6 +17981,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         if any(x["frame"] >= int(data.get("frame_count", self.player.frame_count)) for x in shared["states"]):
             raise ValueError("Shared assembly state is outside the video")
         # Reset state
+        self.frame_review = copy.deepcopy(data.get("frame_review",{}))
         self.shared_assembly = shared
         self._assembly_default_reference = bool(data.get("assembly_default_reference",False))
         self.events.clear()
@@ -18140,11 +18157,13 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
                         and str(box_class_id) not in self.class_map
                     ):
                         self.class_map[box_class_id] = label
+                if getattr(self,"skip_auto_tracking_import",False) and not (entry.get("human_verified") or entry.get("locked") or str(entry.get("source","")).startswith(("manual","human"))):continue
                 new_rb = {
                     "id": bid,
                     "orig_frame": f_idx - self.start_offset,
                     "label": label,
-                    "source": "loaded_annotation",
+                    "source": entry.get("source","loaded_annotation"),
+                    "human_verified": bool(entry.get("human_verified",False)),
                     "locked": bool(entry.get("locked")),
                     "x1": x1,
                     "y1": y1,
@@ -18250,6 +18269,8 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
             if hand_key:
                 hoi_data[hand_key] = self._ensure_hand_annotation_state(
                     {
+                        "required_review_frames": list(event.get("required_review_frames",[])),
+                        "_onset_manually_adjusted": bool(event.get("onset_manually_adjusted",False)),
                         "shared_assembly_ref": bool(event.get("shared_assembly_ref",False)),
                         "verb": verb,
                         "target_object_id": target_id,
@@ -18682,6 +18703,8 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
                 interaction = {}
                 target_label = (noun_at(self._assembly_data(), int(h_data.get("interaction_start") if h_data.get("interaction_start") is not None else event.get("frames",[0])[0])) if h_data.get("shared_assembly_ref") else label_for_id(target))
                 event_entry["shared_assembly_ref"] = bool(h_data.get("shared_assembly_ref",False))
+                event_entry["onset_manually_adjusted"] = bool(h_data.get("_onset_manually_adjusted",False))
+                event_entry["required_review_frames"] = list(h_data.get("required_review_frames",[]))
                 if target_label:
                     interaction["target"] = target_label
                     interaction["noun"] = target_label
@@ -18711,6 +18734,8 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
                     entry = {
                         "frame": rb["orig_frame"],
                         "bbox": [rb["x1"], rb["y1"], rb["x2"], rb["y2"]],
+                        "human_verified": bool(rb.get("human_verified",False)),
+                        "source": rb.get("source","unknown"),
                     }
                     if self._is_box_locked(rb):
                         entry["locked"] = True
@@ -18752,10 +18777,12 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
             cid = info.get("class_id")
             b_list = []
             for rb in self.raw_boxes:
-                if rb.get("id") == uid:
+                if rb.get("id") == uid and not self._normalize_hand_label(rb.get("label")):
                     ent = {
                         "frame": rb["orig_frame"],
                         "bbox": [rb["x1"], rb["y1"], rb["x2"], rb["y2"]],
+                        "human_verified": bool(rb.get("human_verified",False)),
+                        "source": rb.get("source","unknown"),
                     }
                     if cid is not None:
                         ent["class_id"] = cid
@@ -18817,6 +18844,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
                 "tracks_summary": handtrack_summary,
             },
         }
+        payload["frame_review"] = copy.deepcopy(getattr(self,"frame_review",{}))
         payload["shared_assembly"] = validate_timeline(self._assembly_data())
         payload["assembly_default_reference"] = getattr(self,"_assembly_default_reference",False)
         payload["editor_geometry"] = {"suppressed_hand_boxes": list(getattr(self, "_suppressed_hand_boxes", []))}
@@ -18825,6 +18853,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
     # ---------- UI refresh ----------
     def _set_frame_controls(self, frame: int):
         self._refresh_assembly_caption()
+        self._refresh_frame_review_status()
         super()._set_frame_controls(frame)
         if getattr(self, "hoi_timeline", None):
             self.hoi_timeline.set_current_frame(frame)
@@ -18953,7 +18982,12 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
             if locked:
                 item_txt = f"[LOCK] {item_txt}"
 
-            item = QListWidgetItem(item_txt)
+            from core.frame_review import valid_record
+            entity="H:"+norm_hand if norm_hand else "O:"+str(b.get("id"))
+            reviewed=valid_record(getattr(self,"frame_review",{}).get(str(frame),{}).get(entity),self._boxes_for_review(entity,frame))
+            item = QListWidgetItem(("✓ " if reviewed else "○ ")+item_txt)
+            item.setForeground(QColor("#15803d" if reviewed else "#a16207"))
+            item.setToolTip("Human verified" if reviewed else "Not verified for this geometry")
             item.setData(Qt.UserRole, b)
             self.list_objects.addItem(item)
             thick = False
@@ -19251,7 +19285,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         highlight_ids = {}
         highlight_labels = {}
         current_boxes = {
-            b["id"]: b
+            (("hand",self._normalize_hand_label(b.get("label"))) if self._normalize_hand_label(b.get("label")) else b["id"]): b
             for b in self._frame_boxes_with_cached_hands(frame)
             if isinstance(b, dict) and "id" in b
         }
@@ -19798,6 +19832,7 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
 
     def _hoi_state_signature(self) -> str:
         payload = {
+            "frame_review": getattr(self,"frame_review",{}),
             "shared_assembly": self._assembly_data(),
             "assembly_default_reference": getattr(self,"_assembly_default_reference",False),
             "events": self.events,
@@ -21521,6 +21556,8 @@ class HOIWindow(AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMix
         else:
             anomaly_label = self._remember_anomaly_label(inline_anomaly_label)
 
+        if verb.casefold()=="hold" and (not existing_verb.strip() or hand_data.get("functional_contact_onset") is None) and not hand_data.get("_onset_manually_adjusted") and type(hand_data.get("interaction_start")) is int:
+            hand_data["functional_contact_onset"]=hand_data["interaction_start"]
         hand_data["verb"] = verb
         hand_data["target_object_id"] = target_id
         hand_data["noun_object_id"] = target_id

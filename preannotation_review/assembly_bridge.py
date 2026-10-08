@@ -9,6 +9,7 @@ class ReviewAssemblyBridge(AssemblyEditorMixin,QWidget):
     def __init__(self,window):
         super().__init__(window);self.window=window;doc=window.doc
         self.shared_assembly=copy.deepcopy(doc.data.get('shared_assembly',{'schema':'shared-assembly-1','states':[]}))
+        self.frame_review=copy.deepcopy(doc.data.get('frame_review',{}))
         self.player=SimpleNamespace(cap=True,current_frame=window.player.current_frame,frame_count=doc.frame_count)
         self.global_object_map={};self.id_to_category={};self.raw_boxes=[]
         for uid in sorted(doc.instance_ids()):
@@ -32,6 +33,15 @@ class ReviewAssemblyBridge(AssemblyEditorMixin,QWidget):
         if self.previous is not None:
             self.window._assembly_undo=self.previous
         doc.data['shared_assembly']=copy.deepcopy(self.shared_assembly)
+        # Reviewer roles use stable track UID keys instead of numeric object IDs.
+        reviews=copy.deepcopy(doc.data.get('frame_review',{}))
+        old_data=self.previous.get('shared_assembly',{}) if self.previous else {}
+        for text,records in reviews.items():
+            old=state_at(old_data,int(text));new=state_at(self.shared_assembly,int(text))
+            if old!=new:
+                for state in (old,new):
+                    if state:records.pop(f"O:EGO_T{state['object_id']:06d}",None)
+        doc.data['frame_review']=reviews
         doc.data['assembly_default_reference']=self._assembly_default_reference
         if self.window.current_index>=0 and self.event_draft:
             doc.events[self.window.current_index]['value']['shared_assembly_ref']=bool(self.event_draft['current'].get('shared_assembly_ref'))

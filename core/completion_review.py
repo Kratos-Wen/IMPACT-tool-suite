@@ -56,7 +56,7 @@ def collect_review_issues(events, actors, completion_for_hand, object_ids=None, 
             active = any(data.get(k) is not None for k in TIMES)
             active = active or bool(str(data.get('verb') or '').strip())
             active = active or any(data.get(k) is not None for k in (
-                'noun_object_id', 'target_object_id', 'instrument_object_id', 'tool_object_id'))
+                *(() if data.get('shared_assembly_ref') else ('noun_object_id','target_object_id')), 'instrument_object_id', 'tool_object_id'))
             anomaly = str(data.get('anomaly_label') or '').strip().lower()
             active = active or anomaly not in ('', 'normal', 'none')
             if not active:

@@ -145,16 +145,8 @@ class HOITimelineRow(BaseTimelineRow):
         return None, "none"
 
     def _snap_onset_to_segment_edge(self, frame: int, start: int, end: int, x: int) -> int:
-        tol = 8
-        try:
-            if abs(int(x) - self.frame_to_x(int(start))) <= tol:
-                return int(start)
-            end_x = self.frame_to_x(int(end))
-            if abs(int(x) - end_x) <= tol:
-                return int(end)
-        except Exception:
-            pass
-        return max(int(start), min(int(frame), int(end)))
+        from core.frame_review import snap_edge
+        return snap_edge(int(frame),int(start),int(end),int(x),self.frame_to_x(int(start)),self.frame_to_x(int(end)))
 
     def _overlaps(self, start: int, end: int, exclude_id: Optional[int]) -> bool:
         for seg in self._segments():
@@ -297,7 +289,7 @@ class HOITimelineRow(BaseTimelineRow):
 
         if self._mode == "move_onset" and self._active_interval:
             s, e_ = self._active_interval
-            onset = self._snap_onset_to_segment_edge(f, s, e_, e.x())
+            onset = max(s,min(f,e_)) if e.modifiers() & Qt.AltModifier else self._snap_onset_to_segment_edge(f, s, e_, e.x())
             self._preview_interval = (s, e_)
             self._preview_onset = onset
             self.update()

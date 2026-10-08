@@ -6,6 +6,9 @@ from typing import Dict, List, Optional, Tuple, Any
 
 
 SHORTCUT_DEFINITIONS: List[Dict[str, str]] = [
+    {"id":"hoi.verify_frame","section":"IMPACT HOI","scope":"hoi","label":"Verify visible boxes","default":"Ctrl+Return"},
+    {"id":"hoi.next_review_frame","section":"IMPACT HOI","scope":"hoi","label":"Next frame needing review","default":"Alt+N"},
+    {"id":"hoi.prev_review_frame","section":"IMPACT HOI","scope":"hoi","label":"Previous frame needing review","default":"Alt+P"},
     # --- HOI ---
     {
         "id": "hoi.step_prev",

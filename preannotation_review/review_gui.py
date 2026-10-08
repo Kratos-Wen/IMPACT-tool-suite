@@ -35,7 +35,9 @@ class ReviewPlayer(VideoPlayer):
         super().mouseDoubleClickEvent(event)
 
 
-class ReviewWindow(QMainWindow):
+from frame_checks import ReviewFrameMixin
+
+class ReviewWindow(ReviewFrameMixin,QMainWindow):
     def edit_shared_assembly(self):
         if not self.doc or not self.require_reviewer() or not self.apply_current():return
         from assembly_bridge import ReviewAssemblyBridge
@@ -69,6 +71,16 @@ class ReviewWindow(QMainWindow):
         self.loading = False; self.dirty = False; self.selected_track = None
         self.setWindowTitle('IMPACT 预标注审核 — 机器建议需人工确认')
         self.resize(1550, 980)
+        menu=self.menuBar().addMenu("Frame review")
+        for label,key,fn in [("Verify visible boxes","Ctrl+Return",self.verify_review_frame),("Next frame needing review","Alt+N",lambda:self.next_review_frame(1)),("Previous frame needing review","Alt+P",lambda:self.next_review_frame(-1))]:
+            action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
+            from utils.shortcut_settings import load_shortcut_bindings,default_shortcut_bindings,shortcut_value
+            sid={"Ctrl+Return":"hoi.verify_frame","Alt+N":"hoi.next_review_frame","Alt+P":"hoi.prev_review_frame"}[key]
+            action.setShortcut(QKeySequence(shortcut_value(load_shortcut_bindings(),default_shortcut_bindings(),sid,key)))
+        menu.addAction("Mark entity not visible...",self.mark_review_not_visible)
+        menu.addAction("Require review at current frame",self.require_review_current_frame)
+        menu.addAction("Clear automatic track in event...",self.clear_review_event_track)
+        menu.addAction("Undo track clear",self.undo_review_track_clear)
         central = QWidget(); self.setCentralWidget(central); layout = QVBoxLayout(central)
         top = QHBoxLayout(); layout.addLayout(top)
         top.addWidget(button('打开 review / reviewed JSON', self.choose_file))
@@ -181,7 +193,7 @@ class ReviewWindow(QMainWindow):
             if doc.video_path.stat().st_size != doc.data['source']['source_fingerprint']['bytes']:
                 raise ValueError('视频文件大小与发放版本不同，请使用包内原视频')
             with gzip.open(doc.tracks_path, 'rt', encoding='utf-8') as f: tracks = json.load(f)
-            frames = {r['frame']: r for r in tracks['frames']}
+            frames = {r['frame']: dict(r,tracks=[]) if __import__('os').environ.get('IMPACT_SKIP_AUTOMATIC_TRACKS')=='1' else r for r in tracks['frames']}
             if len(frames) != doc.frame_count: raise ValueError('轨迹帧数不一致')
             self.player.pause()
             self.loading = True
@@ -268,6 +280,9 @@ class ReviewWindow(QMainWindow):
             if e['verb'].casefold() in VERBS: e['verb'] = e['verb'].casefold()
             for key, combo in self.ids.items(): e[key] = combo.currentText().split('|')[0].strip() or None
             for key, field in self.fields.items(): e[key] = None if field.value() < 0 else field.value()
+            if e.get('verb')=='hold' and not row['value'].get('verb') and e.get('onset_frame') is None and e.get('start_frame') is not None:
+                e['onset_frame']=e['start_frame']
+                field=self.fields['onset_frame'];field.blockSignals(True);field.setValue(e['start_frame']);field.blockSignals(False)
             r.update(status=STATES[self.status.currentIndex()], notes=self.notes.toPlainText(),
                      unknown_reason=self.unknown.text(), duplicate_of=self.duplicate.text().strip())
             changed = e != row['value'] or any(r[k] != row['review'].get(k) for k in ('status', 'notes', 'unknown_reason', 'duplicate_of'))
@@ -332,6 +347,12 @@ class ReviewWindow(QMainWindow):
             displayed.append(dict(id=uid, frame=frame, x1=b[0], y1=b[1], x2=b[2], y2=b[3], label=label,
                                   color='#00a878' if uid in overrides else '#e89f00',
                                   selected=uid == self.selected_track, thick=uid in selected_ids))
+        from core.frame_review import valid_record
+        if self.current_index>=0:
+            roles=self._review_roles(self.doc.events[self.current_index]["value"],frame)
+            row=self.doc.data.get("frame_review",{}).get(str(frame),{})
+            done=sum(valid_record(row.get(r),self._role_boxes(r,frame)) for r in roles)
+            self.frame_label.setText(self.frame_label.text()+f" | Human review {done}/{len(roles)}")
         self.player.set_overlay_boxes(displayed)
         self.player.set_edit_context(displayed, on_change=self.box_changed, on_select=self.box_selected,
             allow_add=self.edit_boxes.isChecked(), allow_edit=self.edit_boxes.isChecked(),

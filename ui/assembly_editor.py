@@ -68,6 +68,13 @@ class AssemblyEditorMixin:
                 updated=put_state(data,dict(frame=frame.value(),object_id=uid,components=components,interfaces=interfaces))
             except ValueError as exc:QMessageBox.warning(dlg,'Invalid assembly',str(exc));return
             self._push_undo();self.shared_assembly=updated;self._assembly_default_reference=link.isChecked()
+            reviews=deepcopy(getattr(self,'frame_review',{}))
+            for text,records in reviews.items():
+                old=state_at(data,int(text));new=state_at(updated,int(text))
+                if old!=new:
+                    for state in (old,new):
+                        if state:records.pop('O:'+str(state['object_id']),None)
+            self.frame_review=reviews
             controls=[getattr(self,n,None) for n in ('combo_target','combo_instrument','combo_inline_noun')]
             blocked=[(c,c.blockSignals(True)) for c in controls if c is not None]
             try:self._register_object_entry(uid,'assembly' if len(components)>1 else components[0])
