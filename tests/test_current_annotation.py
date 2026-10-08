@@ -16,7 +16,7 @@ from ui.attribute_selector import AttributeSelector
 from ui.hoi_window import HOIWindow,YoloInferenceWorker,_mediapipe_anatomical_label
 from types import SimpleNamespace
 assert canonical_verb('old-action',{'verb_aliases':{'old_action':'action'}})=='action'
-PROFILE.clear();PROFILE.update(default_anomaly_label='unreviewed',anomaly_labels=['attribute_a','attribute_b'],noun_aliases={'old_part':'part','old_combo':'assembly'},legacy_assembly_mappings={'old_combo':['part','attachment']},legacy_anomaly_candidates={'old_error':['attribute_a']},assembly_components=['part','attachment'],assembly_interfaces=[dict(id='part--attachment',base_component='part',completed_component='attachment')]);refresh_aliases()
+PROFILE.clear();PROFILE.update(default_anomaly_label='unreviewed',anomaly_labels=['attribute_a','attribute_b'],noun_aliases={'old_part':'part','old_combo':'assembly'},legacy_assembly_mappings={'old_combo':['part','attachment']},legacy_anomaly_candidates={'old_error':['attribute_a']},assembly_components=['part','attachment','grip_handle'],assembly_interfaces=[dict(id='part--attachment',base_component='part',completed_component='attachment')]);refresh_aliases()
 assert _mediapipe_anatomical_label('Left')=='right'
 assert _mediapipe_anatomical_label('Right')=='left'
 worker=YoloInferenceWorker(SimpleNamespace(names={0:'old_part'}),[],0.5,0.5,{0:'wrong_editor_class'})
@@ -85,6 +85,7 @@ before_right=copy.deepcopy(w.event_draft['Right_hand'])
 def edit_composition():
  dlg=app.activeModalWidget();parts=dlg.findChild(QListWidget);table=dlg.findChild(QTableWidget)
  assert table.cellWidget(0,1).checkState()==Qt.PartiallyChecked
+ assert 'grip_handle' in [parts.item(i).text() for i in range(parts.count())]
  for i in range(parts.count()):parts.item(i).setCheckState(Qt.Checked if parts.item(i).text()=='part' else Qt.Unchecked)
  dlg.findChild(QDialogButtonBox).button(QDialogButtonBox.Save).click()
 QTimer.singleShot(0,edit_composition);w._open_assembly_editor()

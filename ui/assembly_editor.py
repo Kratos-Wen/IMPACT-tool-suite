@@ -45,7 +45,8 @@ class AssemblyEditorMixin:
         names.discard('assembly')
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
-        for name in sorted(x for x in names if isinstance(x,str) and x and 'hand' not in x.lower()):
+        hand_names={'hand','left_hand','right_hand'}
+        for name in sorted(x for x in names if isinstance(x,str) and x and x.lower().replace(' ','_') not in hand_names):
             item=QListWidgetItem(name);item.setFlags(item.flags()|Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked if name in initial.get('components',[]) else Qt.Unchecked)
             if name in forbidden:
