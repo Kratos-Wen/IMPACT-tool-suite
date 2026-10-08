@@ -113,3 +113,25 @@ Ctrl+滚轮缩放；右键框只删除当前帧的框；修改时间轴标记可
 - CUDA 不可用：检查上一节命令，或明确使用 CPU。
 - Qt 插件错误：避免混用 Conda、系统 Qt 和 venv；使用本工具启动入口。
 - 当前记录包含 Linux Qt 的组件测试和短视频传播测试；完整原主窗口流程及 Windows/macOS 尚未全部验收，部署测试结论见 `VALIDATION.md`。
+
+## 7. 三种桌面系统的支持目标与验收
+
+macOS（包括 Apple Silicon）、Linux 和 Windows 使用同一个界面、JSON 格式和项目配置。基础编辑不依赖 GPU。仓库的 Desktop compatibility 工作流在三种系统上检查真实主窗口创建、含空格及中文路径的跟踪子进程调用，以及共享状态、人工核验和传播保护逻辑。自动检查不等于真实视频及模型推理验收。
+
+macOS 的 SAM CPU 安装应使用普通 PyPI 的 PyTorch wheel，而不是 Linux/Windows CPU 索引：
+
+```bash
+.venv/bin/python -m pip install torch==2.5.1 torchvision==0.20.1
+SAM2_BUILD_CUDA=0 .venv/bin/python -m pip install --no-build-isolation -e .deps/sam2
+```
+
+Windows 原生 CPU 后端的等价命令（在完成上文 SAM 源码下载和版本固定后）：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
+$env:SAM2_BUILD_CUDA = "0"
+.\.venv\Scripts\python.exe -m pip install --no-build-isolation -e .deps/sam2
+.\.venv\Scripts\python.exe launch.py --sam-checkpoint "C:\IMPACT_assets\sam2.1_hiera_small.pt" --device cpu --oplog
+```
+
+以上补充是安装候选路径，Windows 原生和 macOS 的真实 SAM 推理仍需验收。SAM 官方主要支持 Linux，并建议 Windows 使用 WSL；不能将其等同于已验证的原生支持。当前不提供未验证的 MPS 开关。Apple Silicon 上先使用 CPU；未来点跟踪辅助也必须提供 CPU 路径，不能使基础编辑依赖 CUDA。

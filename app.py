@@ -2,6 +2,8 @@ import argparse
 import os
 import sys
 
+_QT_DLL_HANDLES = []
+
 
 def _bootstrap_qt_runtime() -> None:
     """
@@ -55,7 +57,7 @@ def _bootstrap_qt_runtime() -> None:
         # Python 3.8+ on Windows: ensure dependent DLL lookup includes Qt bin.
         if hasattr(os, "add_dll_directory"):
             try:
-                os.add_dll_directory(qt_bin)
+                _QT_DLL_HANDLES.append(os.add_dll_directory(qt_bin))
             except Exception:
                 pass
 
