@@ -17,6 +17,10 @@ def canonical_noun(name, profile):
     if match and match.group(1) in aliases:return str(aliases[match.group(1)])+'_'+match.group(2)
     return value
 
+def canonical_verb(value, profile):
+    verb=str(value or '').strip('\ufeff').strip().lower()
+    return (profile.get('verb_aliases',{}) or {}).get(key(verb),verb)
+
 def _target(event, tracks):
     uid=event.get('noun_object_id',event.get('target_object_id'))
     if uid is None:
@@ -76,7 +80,7 @@ def adapt_annotation(source, profile):
             fields=(event.get('annotation_state') or {}).get('field_state',{})
             for field,value in list(fields.items()):
                 if isinstance(value,str):fields[field]={'status':value,'source':'imported_candidate'}
-            verb=str(event.get('verb','')).strip('\ufeff').strip()
+            verb=canonical_verb(event.get('verb',''),profile)
             if key(verb) in profile.get('forbidden_verbs',{}):
                 event.setdefault('migration_review',{})['source_verb']=verb
                 event['verb']=''
@@ -131,6 +135,22 @@ def adapt_annotation(source, profile):
         library[str(shared_id)]={'label':'assembly','category':'assembly'}
         data.setdefault('provenance',{})['assembly_identity_map']={str(uid):shared_id for uid in assembly_ids}
         data['provenance']['assembly_geometry_sources']=geometry_sources
+    identity_map={int(k):int(v) for k,v in (data.get('provenance',{}).get('assembly_identity_map',{}) or {}).items()}
+    if identity_map:
+        role_fields={'noun_object_id','target_object_id','instrument_object_id','tool_object_id'}
+        def remap_refs(value,context=''):
+            if isinstance(value,list):return [remap_refs(v,context) for v in value]
+            if not isinstance(value,dict):return value
+            out={}
+            for field,item in value.items():
+                role=field in role_fields or (context in role_fields and field in ('value','suggested_value','current_value'))
+                if role and type(item) is int and item in identity_map and str(item) not in library:out[field]=identity_map[item]
+                elif field in ('migration_review','provenance','source_record'):out[field]=item
+                else:out[field]=remap_refs(item,field if field in role_fields else context)
+            return out
+        data=remap_refs(data)
+        library=data.get('object_library',{})
+        tracks=data.get('tracks',{})
     for track in tracks.values():
         if 'category' in track:track['category']=canonical_noun(track['category'],profile)
     # Active vocabularies do not expose obsolete composite classes or duplicate aliases.
@@ -138,7 +158,7 @@ def adapt_annotation(source, profile):
         if isinstance(data.get(field),list):
             data[field]=list(dict.fromkeys('assembly' if key(x) in mappings else canonical_noun(x,profile) for x in data[field]))
     if isinstance(data.get('verb_library'),dict):
-        data['verb_library']={k:v.strip('\ufeff').strip() for k,v in data['verb_library'].items() if isinstance(v,str) and key(v) not in profile.get('forbidden_verbs',{})}
+        data['verb_library']={k:canonical_verb(v,profile) for k,v in data['verb_library'].items() if isinstance(v,str) and key(v) not in profile.get('forbidden_verbs',{})}
     # Class merges keep distinct physical IDs, even when source instance names collide.
     names=set()
     for uid,info in library.items():

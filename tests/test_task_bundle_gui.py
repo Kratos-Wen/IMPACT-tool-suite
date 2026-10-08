@@ -40,13 +40,20 @@ with tempfile.TemporaryDirectory() as d:
  w.player.current_frame=0;w.start_offset=0
  w.raw_boxes=[dict(id=0,orig_frame=0,label='Left_hand',x1=1,y1=2,x2=10,y2=12),dict(id=0,orig_frame=0,label='part',x1=15,y1=15,x2=40,y2=45)]
  w._selected_edit_box=w.raw_boxes[1]
- w._selected_hand_data=lambda:dict(interaction_start=0,interaction_end=2)
+ w._selected_hand_data=lambda:dict(interaction_start=0,interaction_end=2,noun_object_id=0)
  started=[]
  def capture_start(process,executable,arguments):
-  started.append(json.loads(Path(arguments[1]).read_text(encoding='utf-8')))
+  request=json.loads(Path(arguments[1]).read_text(encoding='utf-8'));started.append(request)
+  Path(arguments[2]).write_text(json.dumps(dict(end=request['end'],boxes=[dict(frame=request['end'],x1=16,y1=15,x2=41,y2=45)],empty_frames=[])))
  with patch.object(QInputDialog,'getItem',return_value=('Following frames',True)),patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):
   w._start_correction_propagation()
  assert len(started)==1 and started[0]['id']==0
  assert started[0]['bbox']==[15,15,40,45]
  w._correction_process.finished.emit(1,QProcess.NormalExit)
+ old_boxes=[dict(b) for b in w.raw_boxes]
+ with patch.object(QInputDialog,'getItem',return_value=('Following frames',True)),patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):
+  w._start_correction_propagation()
+ w.events.append(dict(event_id=99,frames=[0,2],hoi_data={}))
+ with patch.object(QMessageBox,'question',return_value=QMessageBox.Yes):w._correction_process.finished.emit(0,QProcess.NormalExit)
+ assert w.raw_boxes==old_boxes,'Stale event propagation was applied'
  print('TASK_GUI_AUTOLOAD_TIMELINE_IDENTITY_AND_CORRECTION_NAMESPACE_PASS')

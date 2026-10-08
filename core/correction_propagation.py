@@ -8,17 +8,23 @@ def object_instance(box, uid):
 def protected(box):
     return bool(box.get("locked") or box.get("human_verified") or str(box.get("source", "")).startswith(("manual", "human")) or box.get("source") == "materialized_handtrack")
 
-def plan(raw_boxes, anchor, start, end, offset=0):
+def matches(box, request):
+    if request.get('entity_kind') == 'hand':
+        return str(box.get('label','')).casefold()==str(request.get('label','')).casefold()
+    return object_instance(box, request['id'])
+
+def plan(raw_boxes, anchor, start, end, offset=0, entity_kind='object'):
     uid=anchor.get("id")
     if uid is None: raise ValueError("Select a box with an instance ID.")
     if end == start: raise ValueError("Choose an interval beyond the corrected frame.")
     direction=1 if end>start else -1
+    request={"id":uid,"label":anchor.get("label", ""),"entity_kind":entity_kind}
     stop=end
     for box in raw_boxes:
         frame=int(box.get("orig_frame", -1))+offset
-        if object_instance(box, uid) and 0 < (frame-start)*direction <= (stop-start)*direction and protected(box): stop=frame-direction
+        if matches(box, request) and 0 < (frame-start)*direction <= (stop-start)*direction and protected(box): stop=frame-direction
     if (stop-start)*direction <= 0: raise ValueError("The next frame is already a human anchor.")
-    return {"id":uid,"label":anchor.get("label", ""),"start":start,"end":stop,"direction":direction,"offset":offset,
+    return {"id":uid,"label":anchor.get("label", ""),"start":start,"end":stop,"direction":direction,"offset":offset,"entity_kind":entity_kind,
             "bbox":[float(anchor[k]) for k in ("x1","y1","x2","y2")], "class_id":anchor.get("class_id")}
 
 def apply(raw_boxes, request, results):
@@ -36,7 +42,7 @@ def apply(raw_boxes, request, results):
     kept=[]
     for box in raw_boxes:
         frame=int(box.get("orig_frame", -1))+offset
-        if object_instance(box, uid) and 0 < (frame-start)*direction <= (end-start)*direction:
+        if matches(box, request) and 0 < (frame-start)*direction <= (end-start)*direction:
             if protected(box): raise ValueError("A human anchor changed while tracking; rerun.")
             continue
         kept.append(copy.deepcopy(box))

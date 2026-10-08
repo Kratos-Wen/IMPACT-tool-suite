@@ -33,3 +33,15 @@ updated=m.apply(back_boxes,back,[dict(frame=5,x1=2,y1=2,x2=12,y2=14)])
 assert any(b['orig_frame']==3 for b in updated) and any(b['orig_frame']==10 for b in updated)
 assert not any(b['orig_frame']==8 for b in updated)
 print('BACKWARD_PROPAGATION_ANCHOR_BOUNDARIES_PASS')
+
+hand_anchor=box(99,0,'manual');hand_anchor['label']='Left_hand'
+hand_next=box(77,1);hand_next['label']='Left_hand'
+object_collision=box(99,1)
+right=box(99,1);right['label']='Right_hand'
+hands=[hand_anchor,hand_next,object_collision,right]
+request=m.plan(hands,hand_anchor,0,2,entity_kind='hand')
+updated=m.apply(hands,request,[dict(frame=1,x1=1,y1=1,x2=11,y2=11)])
+assert object_collision in updated and right in updated
+assert not any(b['label']=='Left_hand' and b['id']==77 for b in updated)
+assert any(b['label']=='Left_hand' and b['id']==99 and b['orig_frame']==1 for b in updated)
+print('HAND_CORRECTION_NAMESPACE_PASS')

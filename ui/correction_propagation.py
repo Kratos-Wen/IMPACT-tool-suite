@@ -13,16 +13,22 @@ class CorrectionPropagationMixin:
         anchor=getattr(self,"_selected_edit_box",None)
         if not isinstance(anchor,dict):
             QMessageBox.information(self,"Track","First select and correct the object box on the current frame."); return
-        if self._normalize_hand_label(anchor.get("label")):
-            QMessageBox.information(self,"Track","Select an object/tool instance. Hand tracking uses the hand backend."); return
+        actor=self._normalize_hand_label(anchor.get('label'))
         hand=self._selected_hand_data() or {}; start=int(self.player.current_frame)
+        if actor and actor!=self.selected_hand_label:
+            QMessageBox.information(self,'Track','Select this hand’s event before propagating its box.');return
+        if not actor:
+            from core.assembly_timeline import resolve_object
+            allowed={resolve_object(hand,self._assembly_data(),start),self._hand_instrument_object_id(hand)}
+            if anchor.get('id') not in allowed:
+                QMessageBox.information(self,'Track','Select the event that uses this Object or instrument.');return
         try: event_start=int(hand["interaction_start"]); event_end=int(hand["interaction_end"])
         except (KeyError,TypeError,ValueError):
             QMessageBox.information(self,"Track","Set this event's Start and End first."); return
         if not event_start <= start <= event_end:
             QMessageBox.information(self,"Track","The corrected frame must be inside the selected event and within its interval."); return
         # The actual current-frame box, not a stale selection from another frame.
-        candidates=[b for b in self.raw_boxes if b.get("id")==anchor.get("id") and not self._normalize_hand_label(b.get("label")) and int(b.get("orig_frame",-1))+int(self.start_offset)==start]
+        candidates=[b for b in self.raw_boxes if (self._normalize_hand_label(b.get("label"))==actor if actor else b.get("id")==anchor.get("id") and not self._normalize_hand_label(b.get("label"))) and int(b.get("orig_frame",-1))+int(self.start_offset)==start]
         if len(candidates)!=1:
             QMessageBox.information(self,"Track","Select or draw one unambiguous box with this ID on the current frame."); return
         anchor=candidates[0]
@@ -39,7 +45,7 @@ class CorrectionPropagationMixin:
         if not ok:return
         end=start+direction*following
         composition=state_at(self._assembly_data(),start)
-        shared=composition is not None and composition['object_id']==anchor.get('id')
+        shared=not actor and composition is not None and composition['object_id']==anchor.get('id')
         if shared:
             if direction>0:
                 change=next_change(self._assembly_data(),start)
@@ -47,7 +53,7 @@ class CorrectionPropagationMixin:
             else:end=max(end,composition['frame'])
         if end==start:
             QMessageBox.information(self,'Track','No continuation within this composition. Correct the adjacent composition separately.');return
-        try: request=plan(self.raw_boxes,anchor,start,end,int(self.start_offset))
+        try: request=plan(self.raw_boxes,anchor,start,end,int(self.start_offset),entity_kind='hand' if actor else 'object')
         except ValueError as exc: QMessageBox.information(self,"Track",str(exc)); return
         checkpoint=os.environ.get("IMPACT_SAM2_CHECKPOINT", "")
         if not Path(checkpoint).is_file():
@@ -61,6 +67,7 @@ class CorrectionPropagationMixin:
         req.write_text(json.dumps(request),encoding="utf-8")
         snapshot=copy.deepcopy(self.raw_boxes); video=self.video_path; offset=int(self.start_offset)
         assembly_snapshot=copy.deepcopy(self._assembly_data())
+        event_snapshot=copy.deepcopy(self.events)
         process=QProcess(self); self._correction_process=process
         dialog=QProgressDialog(f"Tracking ID {request['id']}: frames {start}–{request['end']} on {device}.\nResults are proposals, not reviewed annotations.","Cancel",0,0,self)
         dialog.setWindowTitle("Correction propagation"); dialog.setMinimumDuration(0)
@@ -72,7 +79,7 @@ class CorrectionPropagationMixin:
             try:
                 if code!=0 or not out.exists():
                     QMessageBox.warning(self,"Tracking failed",bytes(stderr).decode(errors="replace")[-2000:] or "Cancelled / backend not installed.");return
-                if self.video_path!=video or int(self.start_offset)!=offset or self.raw_boxes!=snapshot or self._assembly_data()!=assembly_snapshot:
+                if self.video_path!=video or int(self.start_offset)!=offset or self.raw_boxes!=snapshot or self._assembly_data()!=assembly_snapshot or self.events!=event_snapshot:
                     QMessageBox.information(self,"Track","Annotations changed during tracking. Discarded proposals; rerun from the corrected frame.");return
                 result=json.loads(out.read_text(encoding="utf-8"))
                 if not min(start,request["end"]) <= int(result["end"]) <= max(start,request["end"]): raise ValueError("Backend returned invalid end frame")
@@ -82,7 +89,14 @@ class CorrectionPropagationMixin:
                 answer=QMessageBox.question(self,"Apply tracking proposals",f"ID {request['id']}: {len(result['boxes'])} predicted boxes; {len(result['empty_frames'])} empty-mask frames.\n{result.get('stop_reason', '')}\nReplace this ID's automatic boxes only in frames {min(start+direction,request['end'])}–{max(start+direction,request['end'])}?\nThe corrected frame, other IDs and human anchors are preserved. Undo restores this operation.\nAccepting does not mark these frames human-verified.")
                 if answer!=QMessageBox.Yes:return
                 updated=apply(self.raw_boxes,request,result["boxes"])
-                self._push_undo(); self.raw_boxes=updated; self._rebuild_bboxes_from_raw(); self._bump_bbox_revision(); self._bump_query_state_revision()
+                self._push_undo(); self.raw_boxes=updated
+                if actor:
+                    predicted={str(row['frame']) for row in result['boxes']}
+                    suppressed=set(getattr(self,'_suppressed_hand_boxes',[]))
+                    for frame in result.get('empty_frames',[]):suppressed.add(f'{actor}:{frame}')
+                    suppressed={key for key in suppressed if not (key.startswith(actor+':') and key.rsplit(':',1)[1] in predicted)}
+                    self._suppressed_hand_boxes=sorted(suppressed)
+                self._rebuild_bboxes_from_raw(); self._bump_bbox_revision(); self._bump_query_state_revision()
                 self._refresh_boxes_for_frame(self.player.current_frame)
                 self._log("hoi_correction_propagation",box_id=request["id"],start=start,end=request["end"],predicted=len(result["boxes"]))
             except Exception as exc: QMessageBox.warning(self,"Track",str(exc))

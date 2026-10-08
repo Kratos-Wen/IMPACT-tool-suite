@@ -18,9 +18,9 @@ class FrameReviewMixin:
         menu.addAction('Mark selected entity not visible...',self._mark_not_visible)
         menu.addAction('Require review at current frame',self._require_current_frame)
         menu.addSeparator()
-        menu.addAction('Clear automatic Object/tool track in this event...',lambda:self._clear_event_track(False))
-        menu.addAction('Clear all Object/tool boxes in this event...',lambda:self._clear_event_track(True))
-        action=menu.addAction('Skip automatic Object/tool boxes on import');action.setCheckable(True)
+        menu.addAction('Clear automatic track in this event...',lambda:self._clear_event_track(False))
+        menu.addAction('Clear all boxes in this event...',lambda:self._clear_event_track(True))
+        action=menu.addAction('Skip automatic boxes on import');action.setCheckable(True)
         action.toggled.connect(lambda on:setattr(self,'skip_auto_tracking_import',on))
 
     def _review_entities(self,hand,key,frame):
@@ -136,10 +136,19 @@ class FrameReviewMixin:
         s=hand.get('interaction_start');e=hand.get('interaction_end')
         if type(s) is not int or type(e) is not int:return
         ids=[self._hand_noun_object_id(hand),self._hand_instrument_object_id(hand)];ids=list(dict.fromkeys(x for x in ids if x is not None))
-        if not ids:return
-        choice,ok=QInputDialog.getItem(self,'Clear event track','Object/tool ID:',[str(x) for x in ids],0,False)
+        choices=[str(x) for x in ids]+['H:'+self.selected_hand_label]
+        choice,ok=QInputDialog.getItem(self,'Clear event track','Instance:',choices,0,False)
         if not ok:return
-        uid=next(x for x in ids if str(x)==choice)
-        if QMessageBox.question(self,'Clear event track',f'Clear {"all" if include_human else "automatic"} boxes for ID {uid}, frames {s}–{e}?\nShared and overlapping events referencing this ID also see this change. Other IDs and frames are preserved; Undo restores it.')!=QMessageBox.Yes:return
-        self._push_undo();self.raw_boxes=[b for b in self.raw_boxes if not (object_instance(b,uid) and s<=int(b.get('orig_frame',-1))+int(self.start_offset)<=e and (include_human or not protected(b)))]
+        actor=choice[2:] if choice.startswith('H:') else None
+        uid=None if actor else next(x for x in ids if str(x)==choice)
+        if QMessageBox.question(self,'Clear event track',f'Clear {"all" if include_human else "automatic"} boxes for {choice}, frames {s}–{e}?\nOverlapping events referencing this instance also see this change. Undo restores it.')!=QMessageBox.Yes:return
+        def selected(box):
+            return self._normalize_hand_label(box.get('label'))==actor if actor else object_instance(box,uid)
+        self._push_undo()
+        kept_frames={int(b.get('orig_frame',-1))+int(self.start_offset) for b in self.raw_boxes if actor and selected(b) and protected(b) and not include_human}
+        self.raw_boxes=[b for b in self.raw_boxes if not (selected(b) and s<=int(b.get('orig_frame',-1))+int(self.start_offset)<=e and (include_human or not protected(b)))]
+        if actor:
+            suppressed=set(getattr(self,'_suppressed_hand_boxes',[]))
+            suppressed.update(f'{actor}:{frame}' for frame in range(s,e+1) if frame not in kept_frames)
+            self._suppressed_hand_boxes=sorted(suppressed)
         self._rebuild_bboxes_from_raw();self._bump_bbox_revision();self._refresh_boxes_for_frame(self.player.current_frame)

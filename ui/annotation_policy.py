@@ -75,6 +75,8 @@ class AnnotationPolicyMixin:
 
     def _policy_missing(self,hand):
         missing=[]
+        model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
+        forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         review=export_review(hand.get('anomaly_label'),PROFILE)
         if review['anomaly_review_state'] not in ('reviewed','partial'):missing.append('anomaly review')
         if review['anomaly_review_state']=='partial':missing.append('unknown attributes')
@@ -89,6 +91,7 @@ class AnnotationPolicyMixin:
             if type(s) is int and type(e) is int:
                 states=[state_at(self._assembly_data(),s)]+[x for x in self._assembly_data().get('states',[]) if s<x['frame']<=e]
                 if any(not x or x.get('composition_review_state','reviewed')!='reviewed' for x in states):missing.append('assembly composition')
+                if any(x and forbidden.intersection(x.get('components',[])) for x in states):missing.append('model-incompatible composition')
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         for uid in (self._hand_noun_object_id(hand),self._hand_instrument_object_id(hand)):

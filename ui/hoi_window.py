@@ -163,6 +163,14 @@ def _mediapipe_hand_landmarker_model_file(video_path: str = "") -> str:
     return out_path
 
 
+def _mediapipe_anatomical_label(value):
+    label=str(value or '').strip().lower()
+    # https://chuoling.github.io/mediapipe/solutions/hands.html#multi_handedness
+    if not _PROJECT_PROFILE.get('video_mirrored',False):
+        label={'left':'right','right':'left'}.get(label,label)
+    return label
+
+
 def _extract_hand_detections_tasks(results, width: int, height: int) -> List[Dict[str, Any]]:
     if not results:
         return []
@@ -196,7 +204,7 @@ def _extract_hand_detections_tasks(results, width: int, height: int) -> List[Dic
                 "cx": float(0.5 * (x1 + x2)),
                 "cy": float(0.5 * (y1 + y2)),
                 "area": float(max(1.0, max(0.0, x2 - x1) * max(0.0, y2 - y1))),
-                "handedness": label,
+                "handedness": _mediapipe_anatomical_label(label),
                 "handedness_score": float(score),
                 "detection_confidence": float(score),
             }
@@ -729,7 +737,7 @@ class HandTrackBuildWorker(QThread):
                     "cx": float(cx),
                     "cy": float(cy),
                     "area": float(area),
-                    "handedness": str(hand_info.get("label") or "").strip().lower(),
+                    "handedness": _mediapipe_anatomical_label(hand_info.get("label")),
                     "handedness_score": float(hand_info.get("score") or 0.0),
                     "detection_confidence": float(hand_info.get("score") or 0.0),
                 }
@@ -16700,7 +16708,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                     "cx": float(0.5 * (x1 + x2)),
                     "cy": float(0.5 * (y1 + y2)),
                     "area": float(max(1.0, max(0.0, x2 - x1) * max(0.0, y2 - y1))),
-                    "handedness": str(hand_info.get("label") or "").strip().lower(),
+                    "handedness": _mediapipe_anatomical_label(hand_info.get("label")),
                     "handedness_score": float(hand_info.get("score") or 0.0),
                     "detection_confidence": float(hand_info.get("score") or 0.0),
                 }
@@ -16770,14 +16778,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                 label = self._normalize_hand_label("left")
             elif h_low.startswith("right"):
                 label = self._normalize_hand_label("right")
-            if label is None:
-                label = a1 if a1 not in used else a2
-            if label in used:
-                other = a2 if label == a1 else a1
-                if other not in used:
-                    label = other
-                else:
-                    continue
+            if label is None or label in used:
+                continue
             if self.mp_hands_swap:
                 label = a2 if label == a1 else a1
             if label in used:
@@ -18082,7 +18084,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             for combo in (getattr(self, "combo_target", None), getattr(self, "combo_instrument", None)):
                 if isinstance(combo, QComboBox):
                     combo.addItem(display_text, uid)
-        self.object_id_counter = max_obj_id + 1
+        retired = [int(uid) for uid in self._annotation_provenance.get('assembly_identity_map',{})]
+        self.object_id_counter = max([max_obj_id,*retired]) + 1
         self.box_id_counter = max(self.object_id_counter + 1, 1)
 
         if "verb_library" in data:
@@ -18648,7 +18651,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                 h_data = event.get("hoi_data", {}).get(hand_key, {})
                 self._ensure_hand_annotation_state(h_data)
 
-                verb = self._canonical_label_name(h_data.get("verb", ""))
+                from core.annotation_migration import canonical_verb
+                verb = canonical_verb(h_data.get("verb", ""), _PROJECT_PROFILE)
                 target = resolve_object(h_data, self._assembly_data(), int(h_data.get("interaction_start") if h_data.get("interaction_start") is not None else event.get("frames",[0])[0]))
                 instrument = self._hand_instrument_object_id(h_data)
                 anomaly_label = self._normalize_anomaly_label(h_data.get("anomaly_label"))

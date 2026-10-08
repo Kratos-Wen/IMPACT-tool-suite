@@ -11,11 +11,14 @@ for method in ('information','question','warning'):setattr(QMessageBox,method,la
 from core.project_profile import PROFILE
 from core.noun_aliases import refresh_aliases
 from core.anomaly_attributes import export_review,display_value
-from core.annotation_migration import adapt_annotation
+from core.annotation_migration import adapt_annotation,canonical_verb
 from ui.attribute_selector import AttributeSelector
-from ui.hoi_window import HOIWindow,YoloInferenceWorker
+from ui.hoi_window import HOIWindow,YoloInferenceWorker,_mediapipe_anatomical_label
 from types import SimpleNamespace
+assert canonical_verb('old-action',{'verb_aliases':{'old_action':'action'}})=='action'
 PROFILE.clear();PROFILE.update(default_anomaly_label='unreviewed',anomaly_labels=['attribute_a','attribute_b'],noun_aliases={'old_part':'part','old_combo':'assembly'},legacy_assembly_mappings={'old_combo':['part','attachment']},legacy_anomaly_candidates={'old_error':['attribute_a']},assembly_components=['part','attachment'],assembly_interfaces=[dict(id='part--attachment',base_component='part',completed_component='attachment')]);refresh_aliases()
+assert _mediapipe_anatomical_label('Left')=='right'
+assert _mediapipe_anatomical_label('Right')=='left'
 worker=YoloInferenceWorker(SimpleNamespace(names={0:'old_part'}),[],0.5,0.5,{0:'wrong_editor_class'})
 assert worker._class_name_for_id(0)=='part'
 selector=AttributeSelector();selector.setOptions(PROFILE['anomaly_labels'],'unreviewed')
@@ -24,12 +27,22 @@ selector.toggle('unknown');assert export_review(selector.currentText(),PROFILE)[
 selector.toggle('confirm');assert export_review(selector.currentText(),PROFILE)['anomaly_review_state']=='reviewed'
 selector.toggle('normal');assert export_review(selector.currentText(),PROFILE)['anomaly_labels']==[]
 source=dict(version='legacy',video_id='1234567_r1_a_a',fps=15,frame_count=60,object_library={'0':dict(label='old_combo_1',category='old_combo'),'5':dict(label='old_part_2',category='old_part')},tracks={'T_OBJ_0':dict(object_id=0,category='old_combo',boxes=[dict(frame=2,bbox=[1,2,10,20])]),'T_OBJ_5':dict(object_id=5,category='old_part',boxes=[dict(frame=3,bbox=[3,4,12,22])])},hoi_events={'left_hand':[dict(event_id='L_original',start_frame=2,contact_onset_frame=None,end_frame=10,verb='hold',noun_object_id=0,links=dict(target_track_id='T_OBJ_0'),anomaly_label='old_error')],'right_hand':[]})
+source['hoi_events']['left_hand'][0]['annotation_state']={'field_suggestions':{'noun_object_id':{'value':0}}}
 original=copy.deepcopy(source);converted=adapt_annotation(source,PROFILE);assert source==original
 assert converted['schema']=='hoi-annotation' and 'version' not in converted
 assert converted['shared_assembly']['states'][0]['interfaces']['part--attachment']=={'1':None,'2':None}
 assert converted['tracks']['T_OBJ_5']['boxes']==source['tracks']['T_OBJ_5']['boxes']
 assert converted['hoi_events']['left_hand'][0]['anomaly_review_state']=='unreviewed'
 assert adapt_annotation(converted,PROFILE)==converted
+alias_source=copy.deepcopy(source)
+alias_source['object_library']['7']={'label':'old_combo_2','category':'old_combo'}
+alias_source['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']=7
+alias_converted=adapt_annotation(alias_source,PROFILE)
+assert alias_converted['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']==0
+# A newly registered physical instance never inherits a retired alias mapping.
+alias_converted['object_library']['7']={'label':'new_part','category':'new_part'}
+alias_converted['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']=7
+assert adapt_annotation(alias_converted,PROFILE)['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']==7
 payload=copy.deepcopy(converted);event=payload['hoi_events']['left_hand'][0]
 event.update(anomaly_labels=['attribute_a','attribute_b'],anomaly_review_state='reviewed',onset_review_state='unknown',onset_reason='contact hidden',anomaly_evidence={'attribute_a':{'view':'ego','intervals':[[3,5]]},'attribute_b':{'view':'ego','intervals':[[6,8]]}})
 payload['hoi_events']['right_hand']=[dict(event_id='R_original',start_frame=3,contact_onset_frame=3,end_frame=9,verb='insert',noun_object_id=5,anomaly_labels=[],anomaly_review_state='reviewed',links={'target_track_id':'T_OBJ_5'})]
