@@ -109,4 +109,13 @@ with tempfile.TemporaryDirectory() as directory:
  first=archive_source(file);second=archive_source(file)
  assert first==second and (file.parent/first['path']).read_bytes()==original_bytes
  assert file.read_bytes()==original_bytes
+# Profile vocabularies are available for new work without creating a shared assembly.
+PROFILE.update(verbs=['fresh_action'],noun_classes=['fresh_part','assembly'],create_default_noun_instances=True)
+w.combo_verb.setCurrentIndex(-1);w._apply_profile_libraries()
+assert any(label.name=='fresh_action' for label in w.verbs)
+assert w.combo_verb.currentText()==''
+assert any(name.startswith('fresh_part') for name in w.global_object_map)
+generic=dict(verb='hold',noun_object_id=0,interaction_start=2,interaction_end=10,anomaly_label='normal')
+w.global_object_map['assembly_1']=0
+assert 'assembly composition' in w._policy_missing(generic)
 w.close();print('CURRENT_ANNOTATION_25_ROUNDTRIPS_COMPOSITION_DIALOG_AND_ARCHIVE_PASS')

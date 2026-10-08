@@ -75,6 +75,10 @@ class AnnotationPolicyMixin:
 
     def _policy_missing(self,hand):
         missing=[]
+        target=self._hand_noun_object_id(hand)
+        if target is not None and not hand.get('shared_assembly_ref'):
+            categories={self._norm_category(name) for name,uid in self.global_object_map.items() if uid==target}
+            if 'assembly' in categories:missing.append('assembly composition')
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         review=export_review(hand.get('anomaly_label'),PROFILE)

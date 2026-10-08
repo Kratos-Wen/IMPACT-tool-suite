@@ -8724,6 +8724,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             self.combo_verb.setCurrentIndex(idx)
         elif current:
             self.combo_verb.setCurrentText(current)
+        else:
+            self.combo_verb.setCurrentIndex(-1)
 
         self.combo_verb.blockSignals(False)
         self._sync_action_panel_selection(self.combo_verb.currentText())
@@ -10240,6 +10242,28 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                 best_path = candidate
         return best_path if best_score >= 0 else ""
 
+    def _apply_profile_libraries(self):
+        existing={label.name for label in self.verbs}
+        added=False
+        for name in _PROJECT_PROFILE.get('verbs',[]):
+            if name not in existing:
+                uid=max((label.id for label in self.verbs),default=-1)+1
+                self.verbs.append(LabelDef(name=name,id=uid,color_name=self._color_for_index(uid)))
+                existing.add(name);added=True
+        if added:
+            self._update_verb_combo();self.label_panel.refresh()
+        if not _PROJECT_PROFILE.get('create_default_noun_instances',False):return
+        known={self._norm_category(name) for name in self.global_object_map}
+        combos=[getattr(self,name,None) for name in ('combo_target','combo_instrument','combo_inline_noun','combo_inline_instrument')]
+        blocked=[(combo,combo.blockSignals(True)) for combo in combos if combo is not None]
+        try:
+            for name in _PROJECT_PROFILE.get('noun_classes',[]):
+                if name=='assembly' or self._norm_category(name) in known:continue
+                uid=self.object_id_counter;self.object_id_counter+=1
+                self._register_object_entry(uid,name+'_1');known.add(self._norm_category(name))
+        finally:
+            for combo,previous in blocked:combo.blockSignals(previous)
+
     def _auto_load_task_bundle(self, video_path):
         from core.task_assets import resolve_task
         from core.project_profile import activate_project_profile
@@ -10270,6 +10294,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
         resume = paths.get("resume_annotations")
         self._task_resume_path = str(resume) if resume else ""
         if data.get("status") != "ready" and not (resume and resume.is_file()):
+            self._apply_profile_libraries()
             QMessageBox.warning(self, "Task not ready", data.get("reason") or "Assets or timeline verification are pending. No annotations imported.")
             return True
         expected = data.get("frame_count")
@@ -10293,6 +10318,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             if abs(float(payload.get("fps", -1))-float(self.player.frame_rate)) > 0.01:
                 raise ValueError("Saved work FPS differs from this video")
         self._load_annotations_v2(payload, annotation_path=str(annotation))
+        self._apply_profile_libraries()
         self.current_annotation_path = str(resume or annotation)
         self._task_resume_path = str(resume) if resume else ""
         self._mark_query_calibration_dirty()
