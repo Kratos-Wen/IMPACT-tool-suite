@@ -33,3 +33,5 @@ jobs:
       - run: python tests/test_autosave_gui.py
       - run: python tests/test_save_guard_gui.py
       - run: python tests/test_offset_save_gui.py
+      - run: python tests/test_label_guide_gui.py
+      - run: python tests/test_editor_interactions_gui.py

@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QDialog,QVBoxLayout,QLabel,QSpinBox,QComboBox,QListW
 from core.assembly_timeline import state_at,put_state,noun_at,validate_timeline
 from core.project_profile import PROFILE
 from core.annotation_migration import model_from_trial
+from core.label_glossary import label_tooltip
 
 class AssemblyEditorMixin:
     def _unlink_shared_assembly(self):
@@ -48,6 +49,7 @@ class AssemblyEditorMixin:
         hand_names={'hand','left_hand','right_hand'}
         for name in sorted(x for x in names if isinstance(x,str) and x and x.lower().replace(' ','_') not in hand_names):
             item=QListWidgetItem(name);item.setFlags(item.flags()|Qt.ItemIsUserCheckable)
+            item.setToolTip(label_tooltip(name, 'noun'))
             item.setCheckState(Qt.Checked if name in initial.get('components',[]) else Qt.Unchecked)
             if name in forbidden:
                 item.setCheckState(Qt.Unchecked);item.setFlags(item.flags() & ~Qt.ItemIsEnabled);item.setToolTip('Unavailable for this model')

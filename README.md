@@ -32,3 +32,5 @@ See [validation and current limitations](VALIDATION.md). Tracking proposals requ
 ### Saving and recovery
 
 Task edits are saved to a hidden recovery folder every two seconds, including unfinished events, boxes, accepted tracking, shared state and review records. Reopen the same video after an unexpected exit and accept the recovery prompt. The autosave status shows the last successful write. Save the reviewed handoff as `reviewed.json` beside the task video. Writes replace files atomically, and a second editor cannot write the same task concurrently.
+
+The **Noun and Verb Guide** in the file menu reads explanations from your project profile. Selector tooltips show the same definitions; the guide supports search and English/Chinese text supplied by the project. Added labels remain visible and require an agreed project definition.

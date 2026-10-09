@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
 )
 from ui.mixins import FrameControlMixin
 from ui.autosave import AutosaveMixin
+from ui.label_glossary import LabelGlossaryMixin, decorate_combo
 from core.safe_storage import atomic_json
 from ui.correction_propagation import CorrectionPropagationMixin
 from ui.assembly_editor import AssemblyEditorMixin
@@ -1044,7 +1045,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
+class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -1389,6 +1390,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         self.act_save_hands_xml = save_menu.addAction("Export Hands XML...", self._save_hands_xml)
         self.file_menu.addSeparator()
         self.act_open_quick_start = self.file_menu.addAction("Quick Start / Help...", self._open_quick_start_dialog)
+        self.act_label_guide = self.file_menu.addAction("Noun and Verb Guide...", self._open_label_guide)
         self.act_show_onboarding_banner = self.file_menu.addAction(
             "Show Onboarding Banner", self._show_onboarding_banner
         )
@@ -5745,6 +5747,9 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         hand_data = self._selected_hand_data()
         query = self._inline_query_for_selected()
         manual_mode = self._manual_mode_enabled()
+        refresh_controls = [getattr(self, name, None) for name in
+                            ('combo_inline_verb', 'combo_inline_noun', 'combo_inline_instrument', 'combo_inline_anomaly')]
+        refresh_signal_states = [(control, control.signalsBlocked()) for control in refresh_controls if control is not None]
         self._inline_editor_sync = True
         try:
             self._apply_inline_editor_mode_visibility()
@@ -6346,7 +6351,10 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
                         "action",
                     )
         finally:
+            for control, previous in refresh_signal_states:
+                control.blockSignals(previous)
             self._inline_editor_sync = False
+            self._refresh_label_explanations()
             if bool(getattr(self, "_completion_status_refresh_pending", False)):
                 self._completion_status_refresh_pending = False
                 QTimer.singleShot(0, self._update_status_label)
@@ -8716,7 +8724,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
     def _update_verb_combo(self):
         """[Restore] Populate the verb combobox from self.verbs list."""
         current = self.combo_verb.currentText()
-        self.combo_verb.blockSignals(True)
+        was_blocked = self.combo_verb.blockSignals(True)
         self.combo_verb.clear()
 
         sorted_verbs = sorted([v.name for v in self.verbs])
@@ -8730,9 +8738,10 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         else:
             self.combo_verb.setCurrentIndex(-1)
 
-        self.combo_verb.blockSignals(False)
+        self.combo_verb.blockSignals(was_blocked)
         self._sync_action_panel_selection(self.combo_verb.currentText())
         self._update_inline_event_editor()
+        self._refresh_label_explanations()
 
     def _hoi_color_for_verb(self, verb: str) -> Optional[QColor]:
         for v in self.verbs:
@@ -10325,6 +10334,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         self._apply_profile_libraries()
         self.current_annotation_path = str(resume or annotation)
         self._task_resume_path = str(resume) if resume else ""
+        self._refresh_label_explanations()
         self._mark_query_calibration_dirty()
         self._mark_hoi_saved()
         self._log("hoi_task_bundle_loaded", manifest=str(task["manifest"]), annotations=str(annotation))
@@ -13003,7 +13013,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
                 new_value=new_value,
                 new_source="manual_ui",
             )
-        if "verb" in changed_fields and not self._hand_noun_object_id(hand_data):
+        if "verb" in changed_fields and self._hand_noun_object_id(hand_data) is None:
             noun_state = get_field_state(hand_data, "noun_object_id")
             if (
                 self._noun_required_for_verb(hand_data.get("verb"))
@@ -18148,7 +18158,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
             max_obj_id = max(max_obj_id, uid)
             display_text = f"[{uid}] {label}"
             for combo in (getattr(self, "combo_target", None), getattr(self, "combo_instrument", None)):
-                if isinstance(combo, QComboBox):
+                if isinstance(combo, QComboBox) and self._object_label_is_selectable(label):
                     combo.addItem(display_text, uid)
         retired = [int(uid) for uid in self._annotation_provenance.get('assembly_identity_map',{})]
         self.object_id_counter = max([max_obj_id,*retired]) + 1
@@ -20550,6 +20560,10 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
             return fallback
         return str(uid)
 
+    def _object_label_is_selectable(self, label):
+        category = re.sub(r"_\d+$", "", str(label or "").strip())
+        return category.casefold() != 'hand' and not self._normalize_hand_label(category)
+
     def _register_object_entry(self, uid, label: str):
         """Ensure a new object id is represented in the registry and noun combo."""
         if uid is None:
@@ -20569,11 +20583,13 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         self.global_object_map[name] = uid
         self.id_to_category[name] = base
         display_text = f"[{uid}] {name}"
-        if self.combo_target.findData(uid) == -1:
+        if self._object_label_is_selectable(name) and self.combo_target.findData(uid) == -1:
             self.combo_target.addItem(display_text, uid)
         inst_combo = getattr(self, "combo_instrument", None)
-        if isinstance(inst_combo, QComboBox) and inst_combo.findData(uid) == -1:
+        if isinstance(inst_combo, QComboBox) and self._object_label_is_selectable(name) and inst_combo.findData(uid) == -1:
             inst_combo.addItem(display_text, uid)
+        decorate_combo(self.combo_target, "noun", self.global_object_map)
+        decorate_combo(inst_combo, "noun", self.global_object_map)
         if uid >= self.object_id_counter:
             self.object_id_counter = uid + 1
 
@@ -20596,6 +20612,8 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
                 )
                 combo.addItem(empty_text, None)
                 for name, uid in sorted(self.global_object_map.items(), key=lambda x: x[1]):
+                    if not self._object_label_is_selectable(name):
+                        continue
                     display_text = f"[{uid}] {name}"
                     combo.addItem(display_text, uid)
                 if selected is not None:
@@ -21787,15 +21805,12 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         hand_data = self.event_draft[hand_label]
         self._ensure_hand_annotation_state(hand_data)
 
-        self.combo_verb.blockSignals(True)
         self.combo_target.setEnabled(not hand_data.get('shared_assembly_ref',False))
         if getattr(self,'combo_inline_noun',None) is not None:
             self.combo_inline_noun.setEnabled(not hand_data.get('shared_assembly_ref',False))
-        self.combo_target.blockSignals(True)
-        if getattr(self, "combo_instrument", None) is not None:
-            self.combo_instrument.blockSignals(True)
-        if getattr(self, "combo_anomaly", None) is not None:
-            self.combo_anomaly.blockSignals(True)
+        controls = [getattr(self, name, None) for name in
+                    ('combo_verb', 'combo_target', 'combo_instrument', 'combo_anomaly')]
+        blocked = [(control, control.blockSignals(True)) for control in controls if control is not None]
 
         try:
             verb = hand_data.get("verb", "")
@@ -21828,12 +21843,8 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
                 self._populate_anomaly_combo(self.combo_anomaly, anomaly_label)
 
         finally:
-            self.combo_verb.blockSignals(False)
-            self.combo_target.blockSignals(False)
-            if getattr(self, "combo_instrument", None) is not None:
-                self.combo_instrument.blockSignals(False)
-            if getattr(self, "combo_anomaly", None) is not None:
-                self.combo_anomaly.blockSignals(False)
+            for control, previous in blocked:
+                control.blockSignals(previous)
 
         self._sync_action_panel_selection(hand_data.get("verb", ""))
         self._update_status_label()

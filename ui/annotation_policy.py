@@ -3,8 +3,9 @@ from copy import deepcopy
 from PyQt5.QtWidgets import QInputDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QDialogButtonBox
 from core.anomaly_attributes import export_review
 from core.annotation_migration import model_from_trial
-from core.assembly_timeline import state_at
+from core.assembly_timeline import state_at, noun_at
 from core.project_profile import PROFILE
+from core.label_glossary import category_for_label
 
 def onset_resolved(hand):
     extra=hand.get('_event_extra',hand)
@@ -75,6 +76,13 @@ class AnnotationPolicyMixin:
 
     def _policy_missing(self,hand):
         missing=[]
+        if hand.get('verb') in PROFILE.get('deprecated_verbs',[]):missing.append('replace legacy verb')
+        ambiguous=set(PROFILE.get('ambiguous_nouns',[]))
+        for role,uid in (('Object',self._hand_noun_object_id(hand)),('instrument',self._hand_instrument_object_id(hand))):
+            if uid is None or role=='Object' and hand.get('shared_assembly_ref'):continue
+            names=[name for name,value in self.global_object_map.items() if value==uid]
+            if any(not self._object_label_is_selectable(name) for name in names):missing.append('hand used as Object/instrument')
+            if any(category_for_label(name,'noun') in ambiguous or name.startswith('unresolved_object') for name in names):missing.append('identify '+role+' category')
         target=self._hand_noun_object_id(hand)
         if target is not None and not hand.get('shared_assembly_ref'):
             categories={self._norm_category(name) for name,uid in self.global_object_map.items() if uid==target}
@@ -96,6 +104,10 @@ class AnnotationPolicyMixin:
                 states=[state_at(self._assembly_data(),s)]+[x for x in self._assembly_data().get('states',[]) if s<x['frame']<=e]
                 if any(not x or x.get('composition_review_state','reviewed')!='reviewed' for x in states):missing.append('assembly composition')
                 if any(x and forbidden.intersection(x.get('components',[])) for x in states):missing.append('model-incompatible composition')
+                nouns={noun_at(self._assembly_data(),x['frame']) for x in states if x}
+                identities={x['object_id'] for x in states if x}
+                if len(nouns)>1:missing.append('noun changes inside event; split at the change')
+                if len(identities)>1:missing.append('Object ID changes inside event; split at the change')
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         for uid in (self._hand_noun_object_id(hand),self._hand_instrument_object_id(hand)):
@@ -109,6 +121,6 @@ class AnnotationPolicyMixin:
                 if not data.get('verb'):continue
                 for name in self._policy_missing(data):
                     issues.append({'event_id':event['event_id'],'hand':hand,'frame':data.get('interaction_start') or 0,
-                                   'field':'anomaly_label' if name.startswith(('anomaly','unknown')) else 'noun_object_id',
+                                   'field':'verb' if name=='replace legacy verb' else 'instrument_object_id' if name=='identify instrument category' else 'anomaly_label' if name.startswith(('anomaly','unknown')) else 'noun_object_id',
                                    'code':name.replace(' ','_'),'missing':[name]})
         return issues
