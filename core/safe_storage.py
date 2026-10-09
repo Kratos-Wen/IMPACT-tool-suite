@@ -24,7 +24,7 @@ def atomic_json(path, data, *, backup=True):
             backup_tmp = temporary + '.bak'
             try:
                 shutil.copyfile(path, backup_tmp)
-                with open(backup_tmp, 'rb') as stream:
+                with open(backup_tmp, 'r+b') as stream:
                     os.fsync(stream.fileno())
                 os.replace(backup_tmp, backup_path)
             finally:
