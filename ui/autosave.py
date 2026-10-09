@@ -9,6 +9,25 @@ from core.safe_storage import write_recovery, read_recovery, content_digest
 
 
 class AutosaveMixin:
+    def _restore_editor_view(self, view):
+        start = view.get('start_frame', 0)
+        end = view.get('end_frame')
+        maximum = int(self.player.frame_count) - 1
+        if type(start) is not int or not 0 <= start <= maximum or (end is not None and (type(end) is not int or not start <= end <= maximum)):
+            raise ValueError('Saved editor view is outside this video')
+        self.start_offset, self.end_frame = start, end
+        for control, value in ((self.spin_start_offset, start), (self.spin_end_frame, maximum if end is None else end)):
+            previous = control.blockSignals(True)
+            control.setMaximum(maximum)
+            control.setValue(value)
+            control.blockSignals(previous)
+        for control in (self.spin_jump, self.slider):
+            previous = control.blockSignals(True)
+            control.setRange(start, maximum if end is None else end)
+            control.blockSignals(previous)
+        if self.player.cap:
+            self.player.set_crop(start, maximum if end is None else end)
+
     def _init_autosave(self):
         self._autosave_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='impact-save')
         self._autosave_future = None
@@ -78,8 +97,7 @@ class AutosaveMixin:
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
                 if answer == QMessageBox.Yes:
                     state = document['state']
-                    self.start_offset = int(state.get('start_offset', 0))
-                    self.end_frame = state.get('end_frame')
+                    self._restore_editor_view(dict(start_frame=state.get('start_offset', 0), end_frame=state.get('end_frame')))
                     self.actors_config = state.get('actors_config', self.actors_config)
                     from core.models import LabelDef
                     self.verbs = [LabelDef(**v) for v in state.get('verbs', [])]

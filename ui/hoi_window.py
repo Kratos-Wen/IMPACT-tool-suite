@@ -18053,6 +18053,8 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         shared = validate_timeline(data.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
         if any(x["frame"] >= int(data.get("frame_count", self.player.frame_count)) for x in shared["states"]):
             raise ValueError("Shared assembly state is outside the video")
+        if 'editor_view' in data:
+            self._restore_editor_view(data['editor_view'])
         # Reset state
         self.frame_review = copy.deepcopy(data.get("frame_review",{}))
         self.shared_assembly = shared
@@ -18806,7 +18808,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
             for rb in self.raw_boxes:
                 if rb.get("label") == label:
                     entry = {
-                        "frame": rb["orig_frame"],
+                        "frame": int(rb["orig_frame"]) + int(self.start_offset),
                         "bbox": [rb["x1"], rb["y1"], rb["x2"], rb["y2"]],
                         "human_verified": bool(rb.get("human_verified",False)),
                         "source": rb.get("source","unknown"),
@@ -18853,7 +18855,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
             for rb in self.raw_boxes:
                 if rb.get("id") == uid and not self._normalize_hand_label(rb.get("label")):
                     ent = {
-                        "frame": rb["orig_frame"],
+                        "frame": int(rb["orig_frame"]) + int(self.start_offset),
                         "bbox": [rb["x1"], rb["y1"], rb["x2"], rb["y2"]],
                         "human_verified": bool(rb.get("human_verified",False)),
                         "source": rb.get("source","unknown"),
@@ -18923,6 +18925,7 @@ class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, Assembly
         payload["shared_assembly"] = validate_timeline(self._assembly_data())
         payload["assembly_default_reference"] = getattr(self,"_assembly_default_reference",False)
         payload["editor_geometry"] = {"suppressed_hand_boxes": list(getattr(self, "_suppressed_hand_boxes", []))}
+        payload['editor_view'] = dict(start_frame=int(self.start_offset), end_frame=self.end_frame)
         return payload
 
     # ---------- UI refresh ----------
