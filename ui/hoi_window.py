@@ -43,6 +43,8 @@ from PyQt5.QtWidgets import (
     QGraphicsDropShadowEffect,
 )
 from ui.mixins import FrameControlMixin
+from ui.autosave import AutosaveMixin
+from core.safe_storage import atomic_json
 from ui.correction_propagation import CorrectionPropagationMixin
 from ui.assembly_editor import AssemblyEditorMixin
 from ui.frame_review import FrameReviewMixin
@@ -1042,7 +1044,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
+class HOIWindow(AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -2418,6 +2420,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
         self._mark_hoi_saved()
 
         self._update_verb_combo()
+        self._init_autosave()
         self._set_verb_library_admin_mode(False)
         self._update_draw_mode_visibility()
         self._update_inline_edit_boxes_button_state()
@@ -10317,6 +10320,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                 raise ValueError("Saved work frame count differs from this video")
             if abs(float(payload.get("fps", -1))-float(self.player.frame_rate)) > 0.01:
                 raise ValueError("Saved work FPS differs from this video")
+        self._reserve_autosave(video_path)
         self._load_annotations_v2(payload, annotation_path=str(annotation))
         self._apply_profile_libraries()
         self.current_annotation_path = str(resume or annotation)
@@ -10325,6 +10329,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
         self._mark_hoi_saved()
         self._log("hoi_task_bundle_loaded", manifest=str(task["manifest"]), annotations=str(annotation))
         self._update_onboarding_banner()
+        self._open_autosave(str(annotation))
         if checkpoint and not checkpoint.is_file():
             QMessageBox.warning(self, "Tracking weights missing", "Annotations loaded. Download the bundle weights before using Track Correction.")
         return True
@@ -14176,8 +14181,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
                 "error": str(error or "").strip(),
             }
             fp = self._recovery_snapshot_path(reason=reason)
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, ensure_ascii=False)
+            atomic_json(fp, payload)
             try:
                 graph = build_hoi_event_graph(
                     self.events,
@@ -14399,9 +14403,22 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
         if current_norm == target_norm and self._workspace_has_annotation_state():
             self._log("hoi_video_already_open_edits_retained", path=fp)
             return
+        # Probe the destination lock before clearing the current workspace.
+        from pathlib import Path
+        from PyQt5.QtCore import QLockFile
+        if getattr(self, '_autosave_reserved', None) != Path(fp).resolve():
+            directory = Path(fp).resolve().parent / '.impact-recovery'
+            directory.mkdir(exist_ok=True)
+            probe = QLockFile(str(directory / (Path(fp).name + '.json.lock')))
+            probe.setStaleLockTime(0)
+            if not probe.tryLock(0):
+                QMessageBox.warning(self, 'Video already open', 'Close the other editor using this video before loading it.')
+                return
+            probe.unlock()
         if current_norm and target_norm and current_norm != target_norm and self._workspace_has_annotation_state():
             if not self._confirm_save_before_loading_video(fp):
                 return
+            self._reserve_autosave(fp)
             self._reset_annotation_workspace_state(
                 reason="load_new_video_auto",
                 keep_current_video=True,
@@ -14420,6 +14437,9 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             self._log_annotation_ready_state("hoi_load_video_failed")
             return
         self.current_annotation_path = ""
+        self._finish_autosave()
+        self._autosave_path = None
+        self._autosave_baseline = None
         self._task_resume_path = ""
         self._task_trial_id = ""
         try:
@@ -14429,6 +14449,7 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             return
         if not task_loaded:
             self._auto_load_local_assets_for_video(fp)
+            self._open_autosave()
         self._log_annotation_ready_state("hoi_load_video_assets")
         self._maybe_warn_full_assist_semantic_unavailable("hoi_load_video_assets")
         self._mark_query_calibration_dirty()
@@ -17297,7 +17318,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
         if bool(getattr(self, "_close_request_approved", False)):
             return True
         if (
-            self._yolo_infer_worker is not None
+            getattr(self, '_correction_process', None) is not None
+            or self._yolo_infer_worker is not None
             or self._videomae_infer_worker is not None
             or self._videomae_batch_progress is not None
             or self._handtrack_worker is not None
@@ -17397,6 +17419,18 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             if not fp:
                 return
 
+            from pathlib import Path
+            if getattr(self, '_task_resume_path', ''):
+                expected = Path(self._task_resume_path).resolve()
+                if Path(fp).resolve() != expected:
+                    QMessageBox.warning(self, 'Save in task folder',
+                        'Save this task as reviewed.json in its video folder so reopening restores your work.')
+                    return
+            elif Path(fp).name in ('annotations.json', 'review.json'):
+                QMessageBox.warning(self, 'Preserve source annotations',
+                    'Choose reviewed.json or another output name. Source annotations are kept unchanged.')
+                return
+
             ok_incomplete, _ = self._check_incomplete_hoi(context="save")
             if not ok_incomplete:
                 self._log("hoi_save_annotations_cancelled", reason="incomplete_check")
@@ -17408,8 +17442,8 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             is_valid_save = incomplete_issue_count == 0
 
             # 5. Write file
-            with open(fp, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, ensure_ascii=False)
+            self._finish_autosave()
+            atomic_json(fp, payload)
 
             try:
                 graph = build_hoi_event_graph(
@@ -17480,6 +17514,10 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
             self._ensure_semantic_adapter_loaded()
             self._mark_query_calibration_dirty()
             self._mark_hoi_saved()
+            if getattr(self, '_autosave_path', None):
+                self._autosave_baseline = self._autosave_snapshot()
+                for recovery in (self._autosave_path, self._autosave_path.with_name(self._autosave_path.name + '.bak')):
+                    recovery.unlink(missing_ok=True)
             QMessageBox.information(
                 self, "Saved", f"Successfully saved to:\n{os.path.basename(fp)}"
             )
@@ -20604,6 +20642,13 @@ class HOIWindow(AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, Co
 
     def closeEvent(self, e):
         if not self._confirm_close_request(prompt_parent=self):
+            e.ignore()
+            return
+        try:
+            self._stop_autosave()
+        except Exception as exc:
+            self._close_request_approved = False
+            QMessageBox.warning(self, 'Save still pending', str(exc))
             e.ignore()
             return
         self._finalize_close_request()

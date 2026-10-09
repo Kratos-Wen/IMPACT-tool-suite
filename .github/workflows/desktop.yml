@@ -29,3 +29,6 @@ jobs:
       - run: python tests/test_task_assets.py
       - run: python tests/test_task_bundle_gui.py
       - run: python tests/test_current_annotation.py
+      - run: python tests/test_safe_storage.py
+      - run: python tests/test_autosave_gui.py
+      - run: python tests/test_save_guard_gui.py

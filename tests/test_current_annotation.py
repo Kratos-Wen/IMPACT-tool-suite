@@ -106,10 +106,14 @@ out=w._build_payload_v2()['hoi_events']['left_hand'][0];assert out['contact_onse
 # Byte-exact archiving is idempotent and does not replace an existing source.
 from core.annotation_archive import archive_source
 with tempfile.TemporaryDirectory() as directory:
- file=Path(directory)/'old.json';original_bytes=b'{"version":"old"}\n';file.write_bytes(original_bytes)
- first=archive_source(file);second=archive_source(file)
- assert first==second and (file.parent/first['path']).read_bytes()==original_bytes
- assert file.read_bytes()==original_bytes
+    file=Path(directory)/'old.json';original_bytes=b'{"version":"old"}\n';file.write_bytes(original_bytes)
+    from unittest.mock import patch
+    cache=Path(directory)/'application_cache'
+    with patch.dict(os.environ,{'IMPACT_SOURCE_ARCHIVE':str(cache)}):
+        first=archive_source(file);second=archive_source(file)
+    assert first==second and (cache/first['sha256']/first['filename']).read_bytes()==original_bytes
+    assert not (file.parent/'archived').exists()
+    assert file.read_bytes()==original_bytes
 # Profile vocabularies are available for new work without creating a shared assembly.
 PROFILE.update(verbs=['fresh_action'],noun_classes=['fresh_part','assembly'],create_default_noun_instances=True)
 w.combo_verb.setCurrentIndex(-1);w._apply_profile_libraries()

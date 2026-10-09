@@ -66,6 +66,7 @@ class CorrectionPropagationMixin:
         req=Path(temporary.name)/"request.json"; out=Path(temporary.name)/"result.json"
         req.write_text(json.dumps(request),encoding="utf-8")
         snapshot=copy.deepcopy(self.raw_boxes); video=self.video_path; offset=int(self.start_offset)
+        self._checkpoint_tracking()
         assembly_snapshot=copy.deepcopy(self._assembly_data())
         event_snapshot=copy.deepcopy(self.events)
         process=QProcess(self); self._correction_process=process
@@ -98,6 +99,7 @@ class CorrectionPropagationMixin:
                     self._suppressed_hand_boxes=sorted(suppressed)
                 self._rebuild_bboxes_from_raw(); self._bump_bbox_revision(); self._bump_query_state_revision()
                 self._refresh_boxes_for_frame(self.player.current_frame)
+                self._checkpoint_tracking()
                 self._log("hoi_correction_propagation",box_id=request["id"],start=start,end=request["end"],predicted=len(result["boxes"]))
             except Exception as exc: QMessageBox.warning(self,"Track",str(exc))
             finally:temporary.cleanup();process.deleteLater()

@@ -28,3 +28,7 @@ python tests/test_orientation_guard.py
 ```
 
 See [validation and current limitations](VALIDATION.md). Tracking proposals require human review. Upstream model licenses apply to their respective models.
+
+### Saving and recovery
+
+Task edits are saved to a hidden recovery folder every two seconds, including unfinished events, boxes, accepted tracking, shared state and review records. Reopen the same video after an unexpected exit and accept the recovery prompt. The autosave status shows the last successful write. Save the reviewed handoff as `reviewed.json` beside the task video. Writes replace files atomically, and a second editor cannot write the same task concurrently.
