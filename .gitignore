@@ -17,3 +17,4 @@ project_profile.json
 regression_results.json
 correction_propagation_results.json
 .deps/
+.impact-recovery/

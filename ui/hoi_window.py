@@ -2426,6 +2426,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         self._update_verb_combo()
         self._init_autosave()
+        self._init_tracking_tasks()
         self._set_verb_library_admin_mode(False)
         self._update_draw_mode_visibility()
         self._update_inline_edit_boxes_button_state()
@@ -14069,6 +14070,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
     def _bump_bbox_revision(self) -> int:
         self._bbox_revision = int(getattr(self, "_bbox_revision", 0) or 0) + 1
         self._refresh_completion_indicators(update_status=True)
+        if hasattr(self, '_tracking_edit_timer'):self._tracking_edit_timer.start()
         return self._bbox_revision
 
     def _refresh_completion_indicators(
@@ -14437,6 +14439,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if prepared is None:
                 QMessageBox.warning(self, 'Video unavailable', 'Failed to decode video. The current project was retained.')
                 return False
+            self._tracking_loading_video=True
             return self._load_prepared_video(fp, resume_annotation, prepared)
         except (OSError, ValueError, TypeError, cv2.error) as exc:
             QMessageBox.warning(self, 'Video loading failed', str(exc))
@@ -14444,6 +14447,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         finally:
             if prepared is not None and prepared.get('capture') is not None:
                 prepared['capture'].release()
+            self._tracking_loading_video=False
+            self._tracking_attach_video()
 
     def _load_prepared_video(self, fp, resume_annotation, prepared):
         target_norm = self._normalized_video_path(fp)
@@ -17380,8 +17385,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if bool(getattr(self, "_close_request_approved", False)):
             return True
         if (
-            getattr(self, '_correction_process', None) is not None
-            or self._yolo_infer_worker is not None
+            self._yolo_infer_worker is not None
             or self._videomae_infer_worker is not None
             or self._videomae_batch_progress is not None
             or self._handtrack_worker is not None
@@ -20773,9 +20777,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return
         try:
             self._remember_project_session(force=True)
+            self._stop_tracking_tasks()
             self._stop_autosave()
         except Exception as exc:
             self._close_request_approved = False
+            self._resume_tracking_tasks()
             QMessageBox.warning(self, 'Save still pending', str(exc))
             e.ignore()
             return

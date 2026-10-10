@@ -1,14 +1,15 @@
-"""Selected event targets, bounded bidirectional proposals and one atomic apply."""
-import json,os,sys,tempfile,copy
+"""Selected event targets and bounded bidirectional background proposals."""
+import os,copy
 from pathlib import Path
-from PyQt5.QtCore import QProcess,Qt
-from PyQt5.QtWidgets import (QMessageBox,QFileDialog,QProgressDialog,QDialog,QVBoxLayout,
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QMessageBox,QFileDialog,QDialog,QVBoxLayout,
     QLabel,QListWidget,QListWidgetItem,QSpinBox,QFormLayout,QDialogButtonBox)
-from core.correction_propagation import plan,apply_batch
+from core.correction_propagation import plan
 from core.assembly_timeline import next_change,state_at,resolve_object
 from core.frame_review import valid_record
+from ui.tracking_tasks import TrackingTasksMixin
 
-class CorrectionPropagationMixin:
+class CorrectionPropagationMixin(TrackingTasksMixin):
     def _correction_targets(self):
         frame=int(self.player.current_frame);offset=int(self.start_offset);targets={}
         for actor,hand in (self.event_draft or {}).items():
@@ -90,8 +91,6 @@ class CorrectionPropagationMixin:
         return requests,notes
 
     def _start_correction_propagation(self):
-        if getattr(self,'_correction_process',None) is not None:
-            QMessageBox.information(self,'Track','A propagation is already running.');return
         if self.selected_event_id is None:
             QMessageBox.information(self,'Track','Select an event first.');return
         self._pause()
@@ -115,63 +114,6 @@ class CorrectionPropagationMixin:
             config=os.environ.get('IMPACT_SAM2_CONFIG','configs/sam2.1/sam2.1_hiera_s.yaml'),
             device=os.environ.get('IMPACT_SAM2_DEVICE','cpu'),
             gpu_memory_fraction=float(os.environ.get('IMPACT_SAM2_GPU_MEMORY_FRACTION','0.5')),
-            cpu_threads=max(1,int(os.environ.get('IMPACT_SAM2_CPU_THREADS','1'))))
-        temporary=tempfile.TemporaryDirectory(prefix='impact_correction_')
-        req=Path(temporary.name)/'request.json';out=Path(temporary.name)/'result.json'
-        req.write_text(json.dumps(request),encoding='utf-8')
-        snapshot=copy.deepcopy(self.raw_boxes);video=self.video_path;offset=int(self.start_offset)
-        assembly_snapshot=copy.deepcopy(self._assembly_data());events_snapshot=copy.deepcopy(self.events)
-        draft_snapshot=copy.deepcopy(self.event_draft)
-        review_snapshot=copy.deepcopy(getattr(self,'frame_review',{}))
-        suppressed_snapshot=copy.deepcopy(getattr(self,'_suppressed_hand_boxes',[]))
-        def unchanged():
-            return (self.video_path==video and int(self.start_offset)==offset and self.raw_boxes==snapshot
-                and self._assembly_data()==assembly_snapshot and self.events==events_snapshot and self.event_draft==draft_snapshot
-                and getattr(self,'frame_review',{})==review_snapshot and getattr(self,'_suppressed_hand_boxes',[])==suppressed_snapshot)
-        self._checkpoint_tracking()
-        process=QProcess(self);self._correction_process=process
-        progress=QProgressDialog(f'{len(chosen)} targets; {len(requests)} direction branches on {request["device"]}.\n'+'\n'.join(notes[:6]),'Cancel',0,0,self)
-        progress.setWindowTitle('Correction propagation');progress.setMinimumDuration(0)
-        canceled=[False]
-        def cancel():canceled[0]=True;process.kill()
-        progress.canceled.connect(cancel)
-        stderr=bytearray()
-        process.readyReadStandardError.connect(lambda:stderr.extend(bytes(process.readAllStandardError())))
-        def finished(code,*args):
-            self._correction_process=None;progress.blockSignals(True);progress.close()
-            try:
-                if canceled[0]:return
-                if code!=0 or not out.exists():
-                    QMessageBox.warning(self,'Tracking failed',bytes(stderr).decode(errors='replace')[-2000:] or 'Backend not installed or tracking failed.');return
-                if not unchanged():
-                    QMessageBox.information(self,'Track','Annotations changed during tracking. Discarded proposals; rerun from the corrected frame.');return
-                result=json.loads(out.read_text(encoding='utf-8'))
-                updated,completed=apply_batch(self.raw_boxes,requests,result.get('results',[]))
-                if not completed:
-                    QMessageBox.information(self,'Track','No usable continuation. Correct the first uncertain frame and retry.');return
-                lines=[f'{r["entity_kind"]} ID {r["id"]}: {r["start"]} → {r["end"]}, {len(rows.get("boxes",[]))} boxes'+(' — '+rows['stop_reason'] if rows.get('stop_reason') else '') for r,rows in completed]
-                answer=QMessageBox.question(self,'Apply tracking proposals','\n'.join(lines)+'\nReplace automatic boxes in these intervals? Human anchors and other IDs are preserved.\nOne Undo restores the batch. Accepting does not mark frames human-verified.')
-                if answer!=QMessageBox.Yes:return
-                if not unchanged():
-                    QMessageBox.information(self,'Track','Annotations changed while confirming. Discarded proposals; rerun from the corrected frame.');return
-                self._push_undo();self.raw_boxes=updated
-                suppressed=set(getattr(self,'_suppressed_hand_boxes',[]))
-                for r,rows in completed:
-                    if r['entity_kind']!='hand':continue
-                    actor=self._normalize_hand_label(r['label'])
-                    suppressed.update(f'{actor}:{frame}' for frame in rows.get('empty_frames',[]))
-                    for row in rows.get('boxes',[]):suppressed.discard(f'{actor}:{row["frame"]}')
-                self._suppressed_hand_boxes=sorted(suppressed)
-                self._rebuild_bboxes_from_raw();self._bump_bbox_revision();self._bump_query_state_revision()
-                self._refresh_boxes_for_frame(self.player.current_frame);self._checkpoint_tracking()
-                self._log('hoi_correction_batch',targets=len(chosen),branches=len(completed),begin=begin,end=end)
-            except Exception as exc:QMessageBox.warning(self,'Track',str(exc))
-            finally:temporary.cleanup();process.deleteLater()
-        process.finished.connect(finished)
-        def failed(error):
-            if error==QProcess.FailedToStart:
-                self._correction_process=None;progress.blockSignals(True);progress.close();temporary.cleanup();process.deleteLater()
-                QMessageBox.warning(self,'Track','Could not start the configured SAM2 Python interpreter.')
-        process.errorOccurred.connect(failed)
-        worker=str(Path(__file__).resolve().parents[1]/'tools/sam2_correction_worker.py')
-        process.start(os.environ.get('IMPACT_SAM2_PYTHON',sys.executable),[worker,str(req),str(out)])
+            cpu_threads=max(1,int(os.environ.get('IMPACT_SAM2_CPU_THREADS',str(min(4,max(1,(os.cpu_count() or 2)-2)))))))
+        try:self._enqueue_tracking(request,notes)
+        except (ValueError,OSError) as exc:QMessageBox.warning(self,'Tracking queue',str(exc))

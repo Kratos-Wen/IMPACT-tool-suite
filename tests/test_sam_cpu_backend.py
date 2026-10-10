@@ -5,6 +5,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import cv2
 import numpy as np
 from tools.sam2_correction_worker import run,run_batch
+from tools.sam2_tracking_service import Backend
 checkpoint=Path(sys.argv[1]).resolve()
 assert checkpoint.is_file()
 with tempfile.TemporaryDirectory(prefix='SAM CPU space ') as temporary:
@@ -27,13 +28,31 @@ with tempfile.TemporaryDirectory(prefix='SAM CPU space ') as temporary:
  run(dict(video=str(video),checkpoint=str(checkpoint),config='configs/sam2.1/sam2.1_hiera_s.yaml',device='cpu',cpu_threads=1,start=2,end=0,id=0,bbox=[17,15,42,45]),str(output))
  backward=json.loads(output.read_text(encoding='utf-8'));assert backward['requested_end']==0
  assert all(0<=row['frame']<2 for row in backward['boxes'])
- # Multiple targets and both directions share one model, with independent states.
+ # Multiple targets share a state per direction. Consecutive jobs reuse the
+ # resident model and decoded native frames, including hand/object ID collisions.
  from unittest.mock import patch
  from sam2.build_sam import build_sam2_video_predictor
  batch=dict(video=str(video),checkpoint=str(checkpoint),config='configs/sam2.1/sam2.1_hiera_s.yaml',
-     device='cpu',cpu_threads=1,requests=[dict(start=1,end=e,id=uid,bbox=[16,15,41,45]) for uid in [0,7] for e in [0,2]])
+     device='cpu',cpu_threads=1,requests=[dict(start=1,end=e,id=0,entity_kind=kind,label=label,bbox=[16,15,41,45]) for kind,label in [('hand','Left_hand'),('object','part')] for e in [0,2]])
  with patch('sam2.build_sam.build_sam2_video_predictor',wraps=build_sam2_video_predictor) as build:
-  run_batch(batch,str(output));assert build.call_count==1
+  backend=Backend(batch)
+  try:
+   with patch.object(backend.predictor,'init_state',wraps=backend.predictor.init_state) as init,patch('cv2.VideoCapture',wraps=cv2.VideoCapture) as decode:
+    run_batch(batch,str(output),backend=backend)
+    assert init.call_count==2 and decode.call_count==2
+    cancelled=dict(batch,cancel_file=str(root/'cancel.flag'));partial=root/'partial.json'
+    def cancel_after_first_direction(phase,**details):
+     if phase=='tracking' and details['completed']>=2:Path(cancelled['cancel_file']).touch()
+    try:run_batch(cancelled,str(partial),backend=backend,notify=cancel_after_first_direction)
+    except InterruptedError:pass
+    else:raise AssertionError('Cancellation did not retain partial branches')
+    saved=json.loads(partial.read_text());assert len(saved['branches_finished'])==2 and not saved['complete']
+    assert init.call_count==3 and decode.call_count==2
+    Path(cancelled['cancel_file']).unlink();run_batch(cancelled,str(partial),backend=backend)
+    assert init.call_count==4 and decode.call_count==2
+    assert json.loads(partial.read_text())['complete']
+   assert build.call_count==1
+  finally:backend.close()
  result_batch=json.loads(output.read_text(encoding='utf-8'))
  assert len(result_batch['results'])==4
  assert {row['job_index'] for row in result_batch['results']}=={0,1,2,3}

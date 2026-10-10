@@ -129,10 +129,13 @@ class MainWindow(QWidget):
                     event.ignore()
                     return
                 self.hoi_window._remember_project_session(force=True)
+                self.hoi_window._stop_tracking_tasks()
                 self.hoi_window._stop_autosave()
                 self.hoi_window._finalize_close_request()
         except Exception as exc:
-            if self.hoi_window is not None:self.hoi_window._close_request_approved=False
+            if self.hoi_window is not None:
+                self.hoi_window._close_request_approved=False
+                self.hoi_window._resume_tracking_tasks()
             QMessageBox.warning(self,'Save still pending',str(exc))
             event.ignore()
             return

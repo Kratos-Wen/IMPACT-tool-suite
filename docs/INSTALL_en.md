@@ -73,7 +73,9 @@ Download your task directory and its sibling `Shared`. Choose Manual mode and op
 
 For a standalone video, use `--project-profile "/path/to/project_profile.json"` and Load HOI annotations to select its draft. Legacy editor imports preserve the source in `archived` before conversion.
 
-Select an event and instance, drag or resize the box, then use **Track Correction** to propagate to following or preceding frames. Check proposals before applying them. Ctrl+wheel zooms; right-click deletes the current box. Frame review controls verify boxes and navigate unfinished work. Undo restores edits and propagation. Project annotation requirements are supplied in the private task materials.
+Select an event and instance, drag or resize the reference box, then use **Track Correction**. Check the target boxes and choose the frame interval on either side of the current frame. Press OK to queue propagation and continue annotating. The inline bar shows progress in target-frames; **Details** offers cancel and retry/resume. Results automatically appear as unverified boxes. Review them with playback and frame review; Undo restores an applied batch. Human edits made during propagation are preserved. Tasks and partial results recover when reopening the same video; unfinished branches restart from their reference frame.
+
+Ctrl+wheel zooms; right-click deletes the current box. Frame review controls verify boxes and navigate unfinished work. Project annotation requirements are supplied in the private task materials. Keep the video folder writable for recovery files. Default CPU inference uses up to four threads; set `IMPACT_SAM2_CPU_THREADS=1` on a constrained computer. The SAM backend releases its model after two idle minutes.
 
 ## Troubleshooting
 

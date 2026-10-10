@@ -75,40 +75,8 @@ for bad in [results[:-1],[dict(r,job_index=0) for r in results],
  except ValueError:pass
  else:raise AssertionError('Invalid batch accepted')
  assert w.raw_boxes==old
-with tempfile.TemporaryDirectory() as d:
- checkpoint=Path(d)/'weights.pt';checkpoint.touch();os.environ['IMPACT_SAM2_CHECKPOINT']=str(checkpoint)
- w.video_path=str(Path(d)/'video.mp4');w._choose_correction_batch=lambda targets:selection
- def capture(process,executable,args):
-  request=json.loads(Path(args[1]).read_text());assert len(request['requests'])==6
-  Path(args[2]).write_text(json.dumps(dict(results=results)))
- with patch.object(QProcess,'start',new=capture):w._start_correction_propagation()
- w._correction_process.finished.emit(0,QProcess.NormalExit)
- assert w.raw_boxes==updated
- w._hoi_undo();assert w.raw_boxes==old
- w._hoi_redo();assert w.raw_boxes==updated
- with patch.object(QProcess,'start',new=capture):w._start_correction_propagation()
- w.event_draft['Left_hand']['verb']='edited'
- w._correction_process.finished.emit(0,QProcess.NormalExit)
- assert w.raw_boxes==updated
- assert not warnings,warnings
- # Qt keeps processing signals while the confirmation dialog is open. A human
- # visibility decision made then must invalidate the old proposal before apply.
- w.event_draft['Left_hand']['verb']='hold'
- w.raw_boxes=[b for b in w.raw_boxes if not (b['label']=='Left_hand' and b['orig_frame']==14)]
- w.frame_review={};w._rebuild_bboxes_from_raw()
- def complete_capture(process,executable,args):
-  request=json.loads(Path(args[1]).read_text())
-  complete=[dict(job_index=i,end=r['end'],empty_frames=[],boxes=[dict(frame=f,x1=2,y1=2,x2=12,y2=12)
-   for f in range(r['start']+r['direction'],r['end']+r['direction'],r['direction'])]) for i,r in enumerate(request['requests'])]
-  Path(args[2]).write_text(json.dumps(dict(results=complete)))
- def review_while_confirming(*a,**k):
-  w.frame_review={'14':{'H:Left_hand':{'state':'not_visible'}}}
-  return QMessageBox.Yes
- depth=len(w._hoi_undo_stack)
- with patch.object(QProcess,'start',new=complete_capture):w._start_correction_propagation()
- with patch.object(QMessageBox,'question',new=review_while_confirming):w._correction_process.finished.emit(0,QProcess.NormalExit)
- if any(b['label']=='Left_hand' and b['orig_frame']==14 for b in w.raw_boxes) or len(w._hoi_undo_stack)!=depth:
-  w_failures.append('Proposal applied after human review changed during confirmation')
+# Background merging, queued tasks and process lifecycle are exercised by
+# test_background_tracking_gui.py with real Qt subprocesses.
 w._stop_autosave();w._mark_hoi_saved();w.close()
 assert not w_failures,w_failures
 print('BATCH_DIALOG_BIDIRECTIONAL_NAMESPACE_HUMAN_ANCHOR_ASSEMBLY_UNDO_STALE_PASS')
