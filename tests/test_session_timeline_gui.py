@@ -19,7 +19,7 @@ QMessageBox.question=lambda *a,**k:QMessageBox.Yes
 from ui.hoi_window import HOIWindow
 from core.safe_storage import atomic_json
 with tempfile.TemporaryDirectory(prefix='IMPACT session space ') as d:
- root=Path(d);os.environ['IMPACT_HOI_SETTINGS_DIR']=str(root/'settings')
+ root=Path(d).resolve();os.environ['IMPACT_HOI_SETTINGS_DIR']=str(root/'settings')
  os.environ.pop('IMPACT_RESTORE_LAST_PROJECT',None)
  profile=root/'project_profile.json';atomic_json(profile,dict(noun_classes=['part'],verbs=['hold'],anomaly_labels=[]),backup=False)
  video=root/'video.mp4';writer=cv2.VideoWriter(str(video),cv2.VideoWriter_fourcc(*'mp4v'),15,(64,64))
@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='IMPACT session space ') as d:
  w._set_selected_event(event['event_id'],'Left_hand');w.player.seek(12)
  w.hoi_timeline._set_view(4,20);w._remember_project_session(force=True)
  record=json.loads(w._project_session_path().read_text());assert record['frame']==12
- w._stop_autosave();w._mark_hoi_saved();w.close()
+ w._stop_autosave();w._mark_hoi_saved();w.close();w.player.clear()
  # Reopen the task and restore view with no video picker or model inference.
  reopened=window();assert reopened._restore_last_project_session()
  assert reopened.player.current_frame==12 and reopened.hoi_timeline.get_view_start()==4,(reopened.player.current_frame,reopened.hoi_timeline.get_view_start(),reopened._autosave_recovered)
@@ -85,12 +85,12 @@ with tempfile.TemporaryDirectory(prefix='IMPACT session space ') as d:
  remembered=json.loads(reopened._project_session_path().read_text())
  remembered.update(start=0,end=59,frame=2)
  atomic_json(reopened._project_session_path(),remembered,backup=False)
- reopened._stop_autosave();reopened._mark_hoi_saved();reopened.close()
+ reopened._stop_autosave();reopened._mark_hoi_saved();reopened.close();reopened.player.clear()
  recovered=window();assert recovered._restore_last_project_session()
  assert recovered._autosave_recovered
  assert next(b for b in recovered.raw_boxes if b['id']==0 and b['orig_frame']==10)['x1']==11
  assert recovered.player.current_frame==10
- recovered._stop_autosave();recovered._mark_hoi_saved();recovered.close()
+ recovered._stop_autosave();recovered._mark_hoi_saved();recovered.close();recovered.player.clear()
  # Missing files leave a blank editor and retain the saved session for relocation.
  video.rename(root/'moved.mp4');missing=window();saved_session=missing._project_session_path().read_bytes()
  assert not missing._restore_last_project_session() and not missing.video_path
@@ -114,4 +114,5 @@ with tempfile.TemporaryDirectory(prefix='IMPACT session space ') as d:
  host.hoi_window._stop_autosave=original_stop
  host.hoi_window._mark_hoi_saved();host.close();app.processEvents()
  assert host.hoi_window._autosave_stopped
+ host.hoi_window.player.clear()
 print('SESSION_TASK_RESUME_RECOVERY_MISSING_FILE_TIMELINE_WHEEL_KEYFRAME_PASS')
