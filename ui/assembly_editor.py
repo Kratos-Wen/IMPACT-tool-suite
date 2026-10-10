@@ -1,12 +1,13 @@
 """Per-instance composition shared by hands referencing the same ID."""
 from copy import deepcopy
+import re
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QDialog,QVBoxLayout,QLabel,QSpinBox,QComboBox,QListWidget,
     QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox)
 from core.assembly_timeline import (state_at,put_state,noun_at,validate_timeline,empty_timeline,
     reference_id,resolve_object,active_id,active_object_ids,merge_instances)
 from core.project_profile import PROFILE
-from core.annotation_migration import model_from_trial
+from core.annotation_migration import model_from_trial,canonical_noun
 from core.label_glossary import label_tooltip
 
 class AssemblyEditorMixin:
@@ -56,6 +57,28 @@ class AssemblyEditorMixin:
         self._checkpoint_tracking()
 
     def _assembly_specs(self):return PROFILE.get('assembly_interfaces',[])
+
+    def _assembly_instance_choices(self,frame):
+        """Composition IDs, plus an explicit promotion of the selected part.
+
+        Registry names are historical; the timeline supplies the current noun.
+        Never offer every background part as an interchangeable assembly ID.
+        """
+        data=self._assembly_data();names={uid:name for name,uid in self.global_object_map.items()}
+        ids={s['object_id'] for s in data.get('states',[])}
+        ids.update(uid for uid,name in names.items() if canonical_noun(re.sub(r'_\d+$','',name),PROFILE)=='assembly')
+        rows=[]
+        for uid in sorted(ids):
+            state=state_at(data,frame,uid,follow_merges=False)
+            description=', '.join(state['components']) if state and state['components'] else 'composition not set'
+            rows.append((uid,f'ID {uid}: {description}',None))
+        hand=self.event_draft.get(self.selected_hand_label,{})
+        uid=reference_id(hand,data,frame)
+        if uid is not None and uid not in ids and uid in names:
+            part=canonical_noun(re.sub(r'_\d+$','',names[uid]),PROFILE)
+            if part in PROFILE.get('assembly_components',[]):
+                rows.append((uid,f'Start composition on selected {part} (keep ID {uid})',part))
+        return rows
 
     def _assembly_slot_table(self,parent):
         table=QTableWidget(len(self._assembly_specs()),3,parent);table.setObjectName('assemblyInterfaces')
@@ -122,12 +145,20 @@ class AssemblyEditorMixin:
         if not getattr(self.player,'cap',None):QMessageBox.information(self,'Assembly','Load a video first.');return
         if hasattr(self.player,'pause'):self.player.pause()
         data=self._assembly_data();dlg=QDialog(self);dlg.setWindowTitle('Assembly composition by ID');layout=QVBoxLayout(dlg)
-        layout.addWidget(QLabel('Edit one instance. Hands referencing this ID share its composition.'))
+        layout.addWidget(QLabel('Choose one physical assembly. Both hands using its ID share this state.'))
+        layout.addWidget(QLabel('Composition takes effect at frame (not the event Start):'))
         frame=QSpinBox();frame.setObjectName('assemblyFrame');frame.setRange(0,max(0,self.player.frame_count-1));frame.setValue(self._assembly_frame());layout.addWidget(frame)
-        objects=QComboBox();objects.setObjectName('assemblyInstance');objects.addItem('Create a new instance',None)
-        for name,uid in self.global_object_map.items():objects.addItem(f'ID {uid}: {name}',uid)
-        objects.setCurrentIndex(max(0,objects.findData(self._assembly_selected_id())));layout.addWidget(objects)
+        layout.addWidget(QLabel('Assembly instance ID:'))
+        objects=QComboBox();objects.setObjectName('assemblyInstance');objects.addItem('Create a new independent assembly (assign a new ID)',None)
+        promotions={}
+        for uid,text,part in self._assembly_instance_choices(frame.value()):
+            objects.addItem(text,uid)
+            if part:promotions[uid]=part
+        hand_uid=reference_id(self.event_draft.get(self.selected_hand_label,{}),data,frame.value())
+        selected=hand_uid if objects.findData(hand_uid)>0 else self._assembly_selected_id()
+        objects.setCurrentIndex(max(0,objects.findData(selected)));layout.addWidget(objects)
         status=QLabel();layout.addWidget(status)
+        layout.addWidget(QLabel('Check all components currently connected in this instance. Multiple selections are allowed.'))
         names=set(PROFILE.get('assembly_components',[]))|{x for s in data.get('states',[]) for x in s['components']};names.discard('assembly')
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
@@ -137,10 +168,11 @@ class AssemblyEditorMixin:
             if name in forbidden:item.setFlags(item.flags() & ~Qt.ItemIsEnabled);item.setToolTip('Unavailable for this model')
             parts.addItem(item)
         table=self._assembly_slot_table(dlg);layout.addWidget(table);layout.addWidget(QLabel('Slots follow the fixed reference orientation.'))
-        link=QCheckBox('Use this ID for the selected hand and as the default for new events');link.setObjectName('assemblyLink');link.setChecked(True);layout.addWidget(link)
+        link=QCheckBox('Use this ID for the selected hand and as the default for new events');link.setObjectName('assemblyLink');link.setChecked(hand_uid is None or hand_uid==objects.currentData());layout.addWidget(link)
         both=QCheckBox('Also use this ID for the other participating hand');both.setObjectName('assemblyBothHands');layout.addWidget(both)
         def load_state():
             uid=objects.currentData();initial=state_at(data,frame.value(),uid,follow_merges=False) if uid is not None else None;initial=initial or {}
+            if not initial and uid in promotions:initial={'components':[promotions[uid]]}
             retired=uid is not None and active_id(data,uid,frame.value())!=uid
             status.setText(f'ID {uid} is already merged. Select its receiving ID or an earlier frame.' if retired else 'Changes start at this frame for this ID only.')
             for i in range(parts.count()):
@@ -152,7 +184,11 @@ class AssemblyEditorMixin:
             components=[parts.item(i).text() for i in range(parts.count()) if parts.item(i).checkState()==Qt.Checked];interfaces=self._assembly_read_slots(table)
             try:
                 self._assembly_validate_components(components,interfaces);uid=objects.currentData()
+                if uid in promotions and promotions[uid] not in components:
+                    raise ValueError('Keep the selected original part in this composition, or create a new independent assembly.')
                 if uid is None:
+                    if len(components)<2:
+                        raise ValueError('A new independent assembly needs at least two connected components. For a single part, reuse its existing object ID.')
                     used={int(x) for x in self.global_object_map.values()}|{s['object_id'] for s in data.get('states',[])}|{b['id'] for b in self.raw_boxes if type(b.get('id')) is int}
                     uid=max(int(self.object_id_counter),max(used,default=-1)+1)
                 updated=put_state(data,dict(frame=frame.value(),object_id=uid,components=components,interfaces=interfaces,composition_review_state='reviewed'))

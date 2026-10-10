@@ -109,8 +109,22 @@ w._hoi_undo();assert w.shared_assembly==base and 'O:2' in w.frame_review['20']
 
 # Real modal dialog: instance switch reloads its own checklist, and a new ID is unique.
 w.player.cap=True;w.player.seek=lambda f:setattr(w.player,'current_frame',f)
+w.global_object_map['grip_1']=77
+# A registry suffix is not an assembly; only the chosen part can be promoted.
+choices=w._assembly_instance_choices(20)
+assert {uid for uid,_,_ in choices}=={0,2}
+old_draft=copy.deepcopy(w.event_draft['Right_hand'])
+w.event_draft['Right_hand']={'noun_object_id':77}
+assert w._assembly_instance_choices(20)[-1]==(77,'Start composition on selected grip (keep ID 77)','grip')
+w.event_draft['Right_hand']=old_draft
+# Timeline descriptions must win over historical single-part registry names.
+old_name=next(name for name,uid in w.global_object_map.items() if uid==0)
+w.global_object_map.pop(old_name);w.global_object_map['shell']=0
+assert next(text for uid,text,_ in w._assembly_instance_choices(20) if uid==0)=='ID 0: shell, grip'
+w.global_object_map.pop('shell');w.global_object_map[old_name]=0
 def create_instance():
     dlg=app.activeModalWidget();combo=dlg.findChild(QComboBox,'assemblyInstance');parts=dlg.findChild(QListWidget,'assemblyComponents')
+    assert combo.findData(77)==-1 and combo.findData(8)==-1
     combo.setCurrentIndex(combo.findData(0))
     assert {parts.item(i).text() for i in range(parts.count()) if parts.item(i).checkState()==Qt.Checked}=={'shell','grip'}
     combo.setCurrentIndex(combo.findData(2))
@@ -123,6 +137,34 @@ QTimer.singleShot(0,create_instance);w._open_assembly_editor()
 new_ids=set(active_object_ids(w.shared_assembly,20))-{0,2}
 assert len(new_ids)==1 and w.event_draft['Left_hand']==before_left
 w._hoi_undo();assert active_object_ids(w.shared_assembly,20)==[0,2]
+
+# Promotion preserves the selected part; it cannot relabel a handle as a shell.
+capture=[];commit=w._commit_assembly_update
+w._commit_assembly_update=lambda data,uid,*args:capture.append((data,uid))
+old_draft=copy.deepcopy(w.event_draft['Right_hand'])
+old_timeline=copy.deepcopy(w.shared_assembly)
+w.shared_assembly=put_state(empty_timeline(),dict(frame=1,object_id=0,components=['shell','grip']))
+w.global_object_map['grip_1']=77
+old_selected_hand=w.selected_hand_label;w.selected_hand_label='Right_hand'
+w.event_draft['Right_hand']={'noun_object_id':77}
+assert w._assembly_selected_id()==0 and any(uid==77 for uid,_,_ in w._assembly_instance_choices(20))
+def promote_part():
+    dlg=app.activeModalWidget();combo=dlg.findChild(QComboBox,'assemblyInstance');parts=dlg.findChild(QListWidget,'assemblyComponents')
+    assert combo.currentData()==77
+    assert {parts.item(i).text() for i in range(parts.count()) if parts.item(i).checkState()==Qt.Checked}=={'grip'}
+    for i in range(parts.count()):parts.item(i).setCheckState(Qt.Checked if parts.item(i).text()=='part' else Qt.Unchecked)
+    dlg.findChild(QDialogButtonBox).button(QDialogButtonBox.Save).click()
+    assert not capture and 'original part' in warnings.pop()
+    combo.setCurrentIndex(0)
+    for i in range(parts.count()):parts.item(i).setCheckState(Qt.Checked if parts.item(i).text()=='part' else Qt.Unchecked)
+    dlg.findChild(QDialogButtonBox).button(QDialogButtonBox.Save).click()
+    assert not capture and 'at least two' in warnings.pop()
+    combo.setCurrentIndex(combo.findData(77))
+    for i in range(parts.count()):parts.item(i).setCheckState(Qt.Checked if parts.item(i).text() in ('grip','part') else Qt.Unchecked)
+    dlg.findChild(QDialogButtonBox).button(QDialogButtonBox.Save).click()
+QTimer.singleShot(0,promote_part);w._open_assembly_editor()
+assert capture[0][1]==77 and state_at(capture[0][0],20,77)['components']==['grip','part']
+w._commit_assembly_update=commit;w.event_draft['Right_hand']=old_draft;w.selected_hand_label=old_selected_hand;w.shared_assembly=old_timeline
 
 # Real merge dialog: insert ID 2 into ID 0; do not overwrite either hand's action.
 w.player.current_frame=30
