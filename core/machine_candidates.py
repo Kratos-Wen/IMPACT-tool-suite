@@ -52,6 +52,7 @@ def editor_candidates(review, *, frames, fps, profile, instance_hints=None):
             event_id=('L_' if side == 'left' else 'R_') + uid, machine_event_uid=uid,
             start_frame=start, contact_onset_frame=onset, end_frame=end,
             verb=v.get('verb') or '', noun_object_id=ids.get(obj), instrument_object_id=ids.get(tool),
+            shared_assembly_ref=bool(v.get('shared_assembly_ref')),shared_assembly_id=v.get('shared_assembly_id'),
             anomaly_labels=[], anomaly_review_state='unreviewed', human_verified=False,
             interaction={'target': category(obj), 'instrument': category(tool)},
             links={'target_track_id': obj, 'tool_track_id': tool, 'subject_track_id': None},
@@ -70,4 +71,5 @@ def editor_candidates(review, *, frames, fps, profile, instance_hints=None):
                               'source_updated_at': review.get('updated_at_utc'),
                               'geometry_display': 'human anchors required; automatic geometry withheld',
                               'conversion_exclusions': skipped})
+    if 'shared_assembly' in review:result['shared_assembly']=copy.deepcopy(review['shared_assembly'])
     return adapt_annotation(result, profile)

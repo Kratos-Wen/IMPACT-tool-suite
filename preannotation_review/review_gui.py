@@ -45,6 +45,11 @@ class ReviewWindow(ReviewFrameMixin,QMainWindow):
         bridge._open_assembly_editor()
         bridge.deleteLater()
 
+    def merge_shared_assembly(self):
+        if not self.doc or not self.require_reviewer() or not self.apply_current():return
+        from assembly_bridge import ReviewAssemblyBridge
+        bridge=ReviewAssemblyBridge(self);bridge._open_assembly_merge();bridge.deleteLater()
+
     def undo_shared_assembly(self):
         snapshot=getattr(self,'_assembly_undo',None)
         if not snapshot or not self.doc:return
@@ -54,9 +59,9 @@ class ReviewWindow(ReviewFrameMixin,QMainWindow):
         for key in ('shared_assembly','assembly_default_reference'):
             if key in snapshot:self.doc.data[key]=copy.deepcopy(snapshot[key])
             else:self.doc.data.pop(key,None)
-        refs={r['event_uid']:r['value'].get('shared_assembly_ref',False) for r in snapshot['events']}
+        refs={r['event_uid']:{k:copy.deepcopy(r['value'].get(k)) for k in ('shared_assembly_ref','shared_assembly_id','object_instance_id')} for r in snapshot['events']}
         for row in self.doc.events:
-            if row['event_uid'] in refs:row['value']['shared_assembly_ref']=refs[row['event_uid']]
+            if row['event_uid'] in refs:row['value'].update(refs[row['event_uid']])
         self._assembly_undo=None;self.dirty=True;self.frame_changed(self.player.current_frame)
     def __init__(self):
         super().__init__()
@@ -89,6 +94,7 @@ class ReviewWindow(ReviewFrameMixin,QMainWindow):
         top.addWidget(button('保存回传文件 Ctrl+S', self.save))
         top.addWidget(button('新增漏标事件', self.add_event))
         top.addWidget(button('Shared assembly...', self.edit_shared_assembly))
+        top.addWidget(button('Merge assemblies...', self.merge_shared_assembly))
         top.addWidget(button('Undo assembly change', self.undo_shared_assembly))
         top.addWidget(button('下一处待审核', self.next_pending))
         self.summary = QLabel('打开批次中某段视频的 review.json'); top.addWidget(self.summary, 1)
@@ -279,6 +285,8 @@ class ReviewWindow(ReviewFrameMixin,QMainWindow):
                      truncated_at_window_start=self.truncated_start.isChecked(), truncated_at_window_end=self.truncated_end.isChecked())
             if e['verb'].casefold() in VERBS: e['verb'] = e['verb'].casefold()
             for key, combo in self.ids.items(): e[key] = combo.currentText().split('|')[0].strip() or None
+            if e.get('shared_assembly_ref'):
+                e['object_instance_id']=row['value'].get('object_instance_id')
             for key, field in self.fields.items(): e[key] = None if field.value() < 0 else field.value()
             if e.get('verb')=='hold' and not row['value'].get('verb') and e.get('onset_frame') is None and e.get('start_frame') is not None:
                 e['onset_frame']=e['start_frame']
@@ -326,17 +334,19 @@ class ReviewWindow(ReviewFrameMixin,QMainWindow):
             event = self.doc.events[self.current_index]['value']
             selected_ids = {w.currentText().split(' | ', 1)[0].strip() for w in self.ids.values()}
             if event.get('shared_assembly_ref'):
-                from core.assembly_timeline import state_at
-                state=state_at(self.doc.data.get('shared_assembly',{}),frame)
+                from core.assembly_timeline import resolve_object
+                uid=resolve_object(event,self.doc.data.get('shared_assembly',{}),frame)
                 old=event.get('object_instance_id')
                 selected_ids.discard(old)
-                if state:selected_ids.add(f"EGO_T{state['object_id']:06d}")
+                if uid is not None:selected_ids.add(f'EGO_T{uid:06d}')
                 self.ids['object_instance_id'].blockSignals(True)
-                self.ids['object_instance_id'].setCurrentText(f"EGO_T{state['object_id']:06d}" if state else '')
+                self.ids['object_instance_id'].setCurrentText(f'EGO_T{uid:06d}' if uid is not None else '')
                 self.ids['object_instance_id'].setEnabled(False)
                 self.ids['object_instance_id'].blockSignals(False)
         displayed = []
         for uid, t in boxes.items():
+            from core.assembly_timeline import active_id
+            if uid.startswith('EGO_T') and uid[5:].isdigit() and active_id(self.doc.data.get('shared_assembly',{}),int(uid[5:]),frame)!=int(uid[5:]):continue
             b = t.get('bbox_xyxy'); meta = self.doc.instance(uid, frame)
             if not b or t.get('visible') is not True: continue
             if uid not in selected_ids and meta.get('anatomical_hand') not in ('left', 'right'): continue
@@ -442,7 +452,11 @@ class ReviewWindow(ReviewFrameMixin,QMainWindow):
     def add_event(self):
         if not self.doc or not self.apply_current() or not self.require_reviewer(): return
         row = self.doc.add_event(self.player.current_frame, self.reviewer.text().strip())
-        if self.doc.data.get('assembly_default_reference'):row['value']['shared_assembly_ref']=True
+        from core.assembly_timeline import active_id,active_object_ids,state_at
+        default=self.doc.data.get('assembly_default_reference',False);data=self.doc.data.get('shared_assembly',{})
+        ids=active_object_ids(data,self.player.current_frame)
+        uid=active_id(data,default,self.player.current_frame) if type(default) is int and state_at(data,self.player.current_frame,default) else ids[0] if default is True and len(ids)==1 else None
+        if uid is not None:row['value'].update(shared_assembly_ref=True,shared_assembly_id=uid)
         self.event_list.addItem(self.event_label(row)); self.dirty = True
         self.event_list.setCurrentRow(len(self.doc.events) - 1); self.tabs.setCurrentIndex(0); self.refresh_summary()
 

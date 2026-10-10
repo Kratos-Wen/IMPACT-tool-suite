@@ -94,6 +94,7 @@ w.shared_assembly=put_state(w.shared_assembly,dict(frame=6,object_id=0,component
 assert 'noun changes inside event; split at the change' not in w._policy_missing(linked)
 w.shared_assembly=put_state(base,dict(frame=2,object_id=0,components=['part']))
 w.shared_assembly=put_state(w.shared_assembly,dict(frame=6,object_id=5,components=['part']))
-assert 'Object ID changes inside event; split at the change' in w._policy_missing(linked)
+assert 'Object ID changes inside event; split at the change' not in w._policy_missing(linked)
+assert w._hand_noun_object_id(linked)==0, 'A different instance must never steal this event reference'
 w._stop_autosave();w.close()
 print('EDITOR_40_INTERLEAVED_CYCLES_HAND_ISOLATION_REVIEW_INVALIDATION_UNDO_DELETE_ROUNDTRIP_PASS')

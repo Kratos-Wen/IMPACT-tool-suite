@@ -1,7 +1,7 @@
 import copy
 from PyQt5.QtWidgets import QMessageBox,QInputDialog
 from core.frame_review import signature,valid_record,missing_frames
-from core.assembly_timeline import state_at
+from core.assembly_timeline import resolve_object,reference_id,change_frames,track_segments
 
 class ReviewFrameMixin:
     def require_review_current_frame(self):
@@ -17,7 +17,8 @@ class ReviewFrameMixin:
     def _review_roles(self,event,frame):
         obj=event.get('object_instance_id')
         if event.get('shared_assembly_ref'):
-            s=state_at(self.doc.data.get('shared_assembly',{}),frame);obj=f"EGO_T{s['object_id']:06d}" if s else None
+            uid=resolve_object(event,self.doc.data.get('shared_assembly',{}),frame)
+            obj=f'EGO_T{uid:06d}' if uid is not None else None
         return ['H:'+event.get('hand','unknown')]+['O:'+x for x in dict.fromkeys([obj,event.get('instrument_instance_id')]) if x]
     def _role_boxes(self,role,frame,geometry=None):
         geometry=self._review_geometry(frame) if geometry is None else geometry
@@ -55,7 +56,11 @@ class ReviewFrameMixin:
             if s<=f<=e:
                 g=self._review_geometry(f)
                 if all(valid_record(row.get(r),self._role_boxes(r,f,g)) for r in self._review_roles(event,f)):valid.append(f)
-        extra=[x['frame'] for x in self.doc.data.get('shared_assembly',{}).get('states',[]) if event.get('shared_assembly_ref')]
+        data=self.doc.data.get('shared_assembly',{})
+        uid=reference_id(event,data,s)
+        extra=change_frames(data,uid,s,e) if event.get('shared_assembly_ref') and uid is not None else []
+        extra += [f-1 for f in list(extra) if f>s]
+        if event.get('shared_assembly_ref'):extra += [row['end_frame'] for row in track_segments(data,uid,s,e)]
         extra+=event.get('required_review_frames',[])
         missing=missing_frames(s,e,event.get('onset_frame'),valid,float(self.doc.data.get('source',{}).get('fps') or getattr(self.player,'frame_rate',15) or 15),extra=extra)
         if not missing:return
@@ -65,23 +70,27 @@ class ReviewFrameMixin:
         if not self.doc or self.current_index<0 or not self.require_reviewer() or not self.apply_current():return
         event=self.doc.events[self.current_index]['value'];s=event.get('start_frame');e=event.get('end_frame')
         if type(s) is not int or type(e) is not int:return
-        roles=[r for r in self._review_roles(event,self.player.current_frame) if r.startswith('O:')]
+        data=self.doc.data.get('shared_assembly',{})
+        anchor=reference_id(event,data,s);path=track_segments(data,anchor,s,e)
+        noun='Object IDs: '+' → '.join(f"EGO_T{row['object_id']:06d}" for row in path) if path else None
+        roles=([noun] if noun else [])+(['O:'+event['instrument_instance_id']] if event.get('instrument_instance_id') else [])
         if not roles:return
         role,ok=QInputDialog.getItem(self,'Clear automatic track','Object/tool:',roles,0,False)
         if not ok:return
-        uid=role[2:]
-        if QMessageBox.question(self,'Clear automatic track',f'Hide automatic ID {uid}, frames {s}–{e}?\nHuman overrides remain. Shared overlapping events are affected. Undo is available.')!=QMessageBox.Yes:return
+        if QMessageBox.question(self,'Clear automatic track',f'Hide automatic {role}, frames {s}–{e}?\nHuman overrides remain. Shared overlapping events are affected. Undo is available.')!=QMessageBox.Yes:return
         previous={}
         for frame in range(s,e+1):
+            number=resolve_object(event,data,frame) if role==noun else None
+            uid=f'EGO_T{number:06d}' if number is not None else role[2:]
             overrides=self.doc.data['box_overrides'].setdefault(str(frame),{})
             if uid not in overrides:
-                previous[str(frame)]=None;overrides[uid]={'bbox_xyxy':None,'visible':False,'geometry_source':'human_event_track_rejection'}
-        self._cleared_track_undo=(self.doc.data['base_snapshot_sha256'],uid,previous);self.dirty=True;self.frame_changed(self.player.current_frame)
+                previous[str(frame)]=uid;overrides[uid]={'bbox_xyxy':None,'visible':False,'geometry_source':'human_event_track_rejection'}
+        self._cleared_track_undo=(self.doc.data['base_snapshot_sha256'],previous);self.dirty=True;self.frame_changed(self.player.current_frame)
     def undo_review_track_clear(self):
         saved=getattr(self,'_cleared_track_undo',None)
         if not saved or not self.doc or saved[0]!=self.doc.data['base_snapshot_sha256']:return
-        _,uid,rows=saved
-        for frame in rows:
+        _,rows=saved
+        for frame,uid in rows.items():
             current=self.doc.data['box_overrides'].get(frame,{}).get(uid,{})
             if current.get('geometry_source')=='human_event_track_rejection':self.doc.data['box_overrides'][frame].pop(uid,None)
         self._cleared_track_undo=None;self.dirty=True;self.frame_changed(self.player.current_frame)

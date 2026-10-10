@@ -38,7 +38,9 @@ alias_source=copy.deepcopy(source)
 alias_source['object_library']['7']={'label':'old_combo_2','category':'old_combo'}
 alias_source['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']=7
 alias_converted=adapt_annotation(alias_source,PROFILE)
-assert alias_converted['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']==0
+assert alias_converted['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']==7
+assert alias_converted['object_library']['7']['category']=='assembly'
+assert alias_converted['hoi_events']['left_hand'][0]['shared_assembly_id']==0
 # A newly registered physical instance never inherits a retired alias mapping.
 alias_converted['object_library']['7']={'label':'new_part','category':'new_part'}
 alias_converted['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']=7

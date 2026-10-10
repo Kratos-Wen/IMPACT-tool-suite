@@ -57,8 +57,6 @@ def adapt_annotation(source, profile):
     model=model_from_trial(data.get('video_id','')+' '+data.get('video_path',''))
     forbidden=set((profile.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
     new_states=[];old_events=0
-    shared_id=min(assembly_ids) if assembly_ids else None
-    geometry_sources=[]
     for hand,events in data.get('hoi_events',{}).items():
         if not isinstance(events,list):raise ValueError('Hand events must be a list')
         for event in events:
@@ -98,46 +96,43 @@ def adapt_annotation(source, profile):
                 if rejected:event['migration_review']['model_conflicts']=rejected
                 frame=event.get('start_frame')
                 if type(frame) is int and frame>=0:
-                    state={'frame':frame,'object_id':shared_id,'components':list(dict.fromkeys(components)),
+                    state={'frame':frame,'object_id':uid,'components':list(dict.fromkeys(components)),
                            'composition_review_state':'unreviewed' if components else 'unknown','source_assembly':label,
                            'interfaces':{spec['id']:{'1':None,'2':None} for spec in profile.get('assembly_interfaces',[])}}
                     new_states.append(state)
                 event['shared_assembly_ref']=True
-                event['noun_object_id']=event['target_object_id']=shared_id
-                event.setdefault('links',{})['target_track_id']=f'T_OBJ_{shared_id}'
+                event['shared_assembly_id']=uid
+                event['noun_object_id']=event['target_object_id']=uid
                 interaction['target']=interaction['noun']=components[0] if len(components)==1 else 'assembly'
     if new_states:
         # Simultaneous contradictory source names remain review issues, never silently resolved.
         grouped={}
-        for state in sorted(new_states,key=lambda x:(x['frame'],x['source_assembly'])):
-            if state['frame'] in grouped and grouped[state['frame']]['components']!=state['components']:
-                grouped[state['frame']].setdefault('conflicting_candidates',[]).append(state['components'])
-            else:grouped[state['frame']]=state
+        for state in sorted(new_states,key=lambda x:(x['frame'],x['object_id'],x['source_assembly'])):
+            k=(state['object_id'],state['frame'])
+            if k in grouped and grouped[k]['components']!=state['components']:
+                grouped[k].setdefault('conflicting_candidates',[]).append(state['components'])
+            else:grouped[k]=state
         # Keep only composition changes; regular HOI starts do not create new state boundaries.
-        states=[]
+        states=[];last={}
         for state in grouped.values():
-            if not states or states[-1]['components']!=state['components'] or state.get('conflicting_candidates'):states.append(state)
-        data['shared_assembly']={'schema':'shared-assembly-1','states':states}
-        merged={};conflicts=[]
-        for tid,track in list(tracks.items()):
-            try:uid=int(track.get('object_id'))
-            except (TypeError,ValueError):continue
-            if uid not in assembly_ids:continue
-            for box in track.get('boxes',[]):
-                frame=box.get('frame')
-                if frame in merged and merged[frame].get('bbox')!=box.get('bbox'):
-                    conflicts.append(frame)
-                else:merged[frame]=copy.deepcopy(box)
-            geometry_sources.append({'source_track_id':tid,'source_object_id':uid})
-            del tracks[tid]
-        tracks[f'T_OBJ_{shared_id}']={'object_id':shared_id,'category':'assembly','boxes':[merged[f] for f in sorted(merged) if f not in set(conflicts)],'migration_geometry_conflicts':sorted(set(conflicts))}
-        for uid in assembly_ids:library.pop(str(uid),None)
-        library[str(shared_id)]={'label':'assembly','category':'assembly'}
-        data.setdefault('provenance',{})['assembly_identity_map']={str(uid):shared_id for uid in assembly_ids}
-        data['provenance']['assembly_geometry_sources']=geometry_sources
+            prior=last.get(state['object_id'])
+            if prior is None or prior['components']!=state['components'] or state.get('conflicting_candidates'):states.append(state)
+            last[state['object_id']]=state
+        data['shared_assembly']={'schema':'shared-assembly-2','states':states,'merges':[]}
+    # Normalize categories without guessing whether different IDs are the same entity.
+    for uid in assembly_ids:
+        library[str(uid)].update(label=f'assembly_{uid}',category='assembly')
+    from core.assembly_timeline import validate_timeline,empty_timeline,reference_id
+    data['shared_assembly']=validate_timeline(data.get('shared_assembly',empty_timeline()))
+    for events in data['hoi_events'].values():
+        for event in events:
+            if event.get('shared_assembly_ref'):
+                f=event.get('start_frame')
+                uid=reference_id(event,data['shared_assembly'],f if type(f) is int else 0)
+                event['shared_assembly_id']=uid
     identity_map={int(k):int(v) for k,v in (data.get('provenance',{}).get('assembly_identity_map',{}) or {}).items()}
     if identity_map:
-        role_fields={'noun_object_id','target_object_id','instrument_object_id','tool_object_id'}
+        role_fields={'noun_object_id','target_object_id','instrument_object_id','tool_object_id','shared_assembly_id'}
         def remap_refs(value,context=''):
             if isinstance(value,list):return [remap_refs(v,context) for v in value]
             if not isinstance(value,dict):return value
@@ -169,7 +164,7 @@ def adapt_annotation(source, profile):
         names.add(info.get('label'))
     if not modern:
         data.setdefault('provenance',{})['migration']={'source_schema':source.get('schema',source.get('version','legacy')),
-            'event_count':old_events,'geometry_preserved_except_conflicting_composite_frames':True,
+            'event_count':old_events,'geometry_and_instance_ids_preserved':True,
             'original_archive_required':True}
     data.pop('version',None)
     data['schema']=SCHEMA

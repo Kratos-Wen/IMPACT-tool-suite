@@ -3,7 +3,7 @@ from copy import deepcopy
 from PyQt5.QtWidgets import QInputDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QDialogButtonBox
 from core.anomaly_attributes import export_review
 from core.annotation_migration import model_from_trial
-from core.assembly_timeline import state_at, noun_at
+from core.assembly_timeline import state_at, noun_at,reference_id,change_frames,track_segments
 from core.project_profile import PROFILE
 from core.label_glossary import category_for_label
 
@@ -101,13 +101,13 @@ class AnnotationPolicyMixin:
         if hand.get('shared_assembly_ref'):
             s=hand.get('interaction_start');e=hand.get('interaction_end')
             if type(s) is int and type(e) is int:
-                states=[state_at(self._assembly_data(),s)]+[x for x in self._assembly_data().get('states',[]) if s<x['frame']<=e]
+                uid=reference_id(hand,self._assembly_data(),s)
+                times=[s]+change_frames(self._assembly_data(),uid,s,e) if uid is not None else [s]
+                states=[state_at(self._assembly_data(),f,uid) if uid is not None else None for f in times]
                 if any(not x or x.get('composition_review_state','reviewed')!='reviewed' for x in states):missing.append('assembly composition')
                 if any(x and forbidden.intersection(x.get('components',[])) for x in states):missing.append('model-incompatible composition')
-                nouns={noun_at(self._assembly_data(),x['frame']) for x in states if x}
-                identities={x['object_id'] for x in states if x}
+                nouns={noun_at(self._assembly_data(),f,uid) for f in times if uid is not None}
                 if len(nouns)>1:missing.append('noun changes inside event; split at the change')
-                if len(identities)>1:missing.append('Object ID changes inside event; split at the change')
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         for uid in (self._hand_noun_object_id(hand),self._hand_instrument_object_id(hand)):

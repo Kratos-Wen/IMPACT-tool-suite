@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QMessageBox,QShortcut,QInputDialog
 from core.frame_review import signature,valid_record,missing_frames
-from core.assembly_timeline import resolve_object
+from core.assembly_timeline import resolve_object,reference_id,change_frames,track_segments
 from core.correction_propagation import object_instance,protected
 
 class FrameReviewMixin:
@@ -104,7 +104,11 @@ class FrameReviewMixin:
                 for text,row in records.items():
                     frame=int(text)
                     if s<=frame<=e and all(valid_record(row.get(entity),index.get((frame,entity),[])) for entity in self._review_entities(hand,key,frame)):valid.append(frame)
-                extra=[st['frame'] for st in self._assembly_data().get('states',[]) if hand.get('shared_assembly_ref')]
+                uid=reference_id(hand,self._assembly_data(),s)
+                extra=change_frames(self._assembly_data(),uid,s,e) if hand.get('shared_assembly_ref') and uid is not None else []
+                extra += [f-1 for f in list(extra) if f>s]
+                # Check both sides of each geometry switch, as well as the merge frame.
+                extra += [row['end_frame'] for row in track_segments(self._assembly_data(),uid,s,e)] if hand.get('shared_assembly_ref') else []
                 extra+=hand.get('required_review_frames',[])
                 for frame in missing_frames(s,e,o,valid,fps,extra=extra):
                     issues.append(dict(event_id=event['event_id'],hand=key,field='bbox_evidence',code='human_frame_review_'+str(frame),frame=frame,missing=['Human frame review required']))
@@ -135,15 +139,21 @@ class FrameReviewMixin:
         hand=self.event_draft.get(self.selected_hand_label,{})
         s=hand.get('interaction_start');e=hand.get('interaction_end')
         if type(s) is not int or type(e) is not int:return
-        ids=[self._hand_noun_object_id(hand),self._hand_instrument_object_id(hand)];ids=list(dict.fromkeys(x for x in ids if x is not None))
-        choices=[str(x) for x in ids]+['H:'+self.selected_hand_label]
+        uid=reference_id(hand,self._assembly_data(),s)
+        path=track_segments(self._assembly_data(),uid,s,e)
+        noun_choice='Object: '+ ' → '.join(str(row['object_id']) for row in path) if path else None
+        tool=self._hand_instrument_object_id(hand)
+        choices=([noun_choice] if noun_choice else [])+([str(tool)] if tool is not None else [])+['H:'+self.selected_hand_label]
         choice,ok=QInputDialog.getItem(self,'Clear event track','Instance:',choices,0,False)
         if not ok:return
         actor=choice[2:] if choice.startswith('H:') else None
-        uid=None if actor else next(x for x in ids if str(x)==choice)
+        uid=None if actor or choice==noun_choice else tool
         if QMessageBox.question(self,'Clear event track',f'Clear {"all" if include_human else "automatic"} boxes for {choice}, frames {s}–{e}?\nOverlapping events referencing this instance also see this change. Undo restores it.')!=QMessageBox.Yes:return
         def selected(box):
-            return self._normalize_hand_label(box.get('label'))==actor if actor else object_instance(box,uid)
+            if actor:return self._normalize_hand_label(box.get('label'))==actor
+            frame=int(box.get('orig_frame',-1))+int(self.start_offset)
+            target=resolve_object(hand,self._assembly_data(),frame) if choice==noun_choice else uid
+            return object_instance(box,target)
         self._push_undo()
         kept_frames={int(b.get('orig_frame',-1))+int(self.start_offset) for b in self.raw_boxes if actor and selected(b) and protected(b) and not include_human}
         self.raw_boxes=[b for b in self.raw_boxes if not (selected(b) and s<=int(b.get('orig_frame',-1))+int(self.start_offset)<=e and (include_human or not protected(b)))]

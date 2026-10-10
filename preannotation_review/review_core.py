@@ -133,11 +133,11 @@ class ReviewDocument:
     def validate_row(self, row):
         review, value = row['review'], row['value']
         if value.get('shared_assembly_ref'):
-            from core.assembly_timeline import state_at
+            from core.assembly_timeline import resolve_object
             value=copy.deepcopy(value)
             frame=value.get('start_frame')
-            state=state_at(self.data.get('shared_assembly',{}),frame) if type(frame) is int else None
-            value['object_instance_id']=f"EGO_T{state['object_id']:06d}" if state else None
+            uid=resolve_object(value,self.data.get('shared_assembly',{}),frame) if type(frame) is int else None
+            value['object_instance_id']=f'EGO_T{uid:06d}' if uid is not None else None
         status = review['status']
         if status not in STATES:
             return ['Invalid review status']
@@ -181,6 +181,7 @@ class ReviewDocument:
                 for state in timeline['states']:
                     if state['frame']>=self.frame_count:errors.append('Assembly state outside video')
                     if f"EGO_T{state['object_id']:06d}" not in self.instance_ids():errors.append('Assembly object does not exist')
+                if any(m['frame']>=self.frame_count for m in timeline['merges']):errors.append('Assembly merge outside video')
             except (ValueError,TypeError,KeyError) as exc:errors.append(str(exc))
         if digest(self.data['machine_snapshot']) != self._base_digest:
             errors.append('Original machine snapshot was modified')

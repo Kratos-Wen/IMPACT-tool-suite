@@ -1,7 +1,9 @@
 """Exercise editor methods without importing optional model runtimes."""
-import ast,copy,json,re,types
+import ast,copy,json,re,types,sys
 from pathlib import Path
 root=Path(__file__).resolve().parent.parent
+sys.path.insert(0,str(root))
+from core.assembly_timeline import resolve_object,active_id,empty_timeline
 results=[]
 for name in ['']:
  p=root/name/'ui/hoi_window.py';tree=ast.parse(p.read_text(encoding='utf-8-sig'))
@@ -11,12 +13,13 @@ for name in ['']:
   n.returns=None
   for a in n.args.args:a.annotation=None
  cls=ast.ClassDef(name='Editor',bases=[],keywords=[],body=methods,decorator_list=[])
- mod=ast.fix_missing_locations(ast.Module(body=[cls],type_ignores=[]));ns={'re':re}
+ mod=ast.fix_missing_locations(ast.Module(body=[cls],type_ignores=[]));ns={'re':re,'resolve_object':resolve_object,'active_id':active_id}
  exec(compile(mod,str(p),'exec'),ns);E=ns['Editor']
  def make():
   e=E();e.selected_event_id=1;e.selected_hand_label='left_hand';e.start_offset=0
   e.event_draft={'left_hand':{'noun_object_id':2,'instrument_object_id':0},'right_hand':{}}
   e.player=types.SimpleNamespace(current_frame=10)
+  e._assembly_data=empty_timeline;e._assembly_frame=lambda:10
   e.raw_boxes=[dict(id=i,orig_frame=f,label='screw',x1=1.,y1=2.,x2=20.,y2=30.) for i,f in [(1,10),(2,10),(2,11)]]
   e._selected_edit_box=copy.deepcopy(e.raw_boxes[1]);e._pending_draw_box_role='noun';e.object_id_counter=3;e.box_id_counter=100;e.class_map={7:'screw'}
   e._normalize_hand_label=lambda s: s if s in ['left_hand','right_hand'] else ''

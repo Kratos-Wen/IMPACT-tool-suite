@@ -239,6 +239,7 @@ def build_hoi_event_graph(
     video_path: str = "",
     annotation_path: str = "",
     actors_config: Optional[Sequence[Dict[str, Any]]] = None,
+    assembly_timeline: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     actor_defs = _iter_actor_defs(events, actors_config)
     graph_events: List[Dict[str, Any]] = []
@@ -284,6 +285,8 @@ def build_hoi_event_graph(
                 "verb": _safe_text(hand.get("verb", "")),
                 "target_object_id": noun_object_id,
                 "noun_object_id": noun_object_id,
+                "shared_assembly_ref": bool(hand.get('shared_assembly_ref')),
+                "shared_assembly_id": hand.get('shared_assembly_id'),
                 "instrument_object_id": instrument_object_id,
                 "tool_object_id": instrument_object_id,
                 **export_review(anomaly_label, PROFILE),
@@ -300,6 +303,13 @@ def build_hoi_event_graph(
                     hand.get("_sparse_evidence_state")
                 ),
             }
+            if hand.get('shared_assembly_ref') and assembly_timeline is not None:
+                from core.assembly_timeline import reference_id,track_segments,resolve_object
+                anchor=start_frame if start_frame is not None else 0
+                uid=reference_id(hand,assembly_timeline,anchor)
+                entry['shared_assembly_id']=uid
+                entry['noun_object_id']=entry['target_object_id']=resolve_object(hand,assembly_timeline,anchor)
+                entry['target_track_segments']=track_segments(assembly_timeline,uid,start_frame,end_frame)
             if hand.get('shared_assembly_ref') and not any((start_frame is not None,onset_frame is not None,end_frame is not None,bool(entry['verb']),instrument_object_id is not None,has_anomaly)):
                 continue
             if not _has_event_content(entry):

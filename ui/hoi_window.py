@@ -49,7 +49,8 @@ from core.safe_storage import atomic_json
 from ui.correction_propagation import CorrectionPropagationMixin
 from ui.assembly_editor import AssemblyEditorMixin
 from ui.frame_review import FrameReviewMixin
-from core.assembly_timeline import validate_timeline, resolve_object, noun_at, state_at
+from core.assembly_timeline import (validate_timeline, resolve_object, noun_at, state_at,
+    empty_timeline, reference_id, active_id, merge_at, track_segments)
 from core.noun_aliases import normalize_noun_aliases
 from core.anomaly_attributes import normalize as normalize_attributes, export_review, display_value, is_positive
 from ui.attribute_selector import AttributeSelector
@@ -1327,6 +1328,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         import_menu.addSeparator()
         self.act_load_annotations = import_menu.addAction("HOI Annotations...", self._load_annotations_json)
         self.act_shared_assembly = self.file_menu.addAction("Shared assembly...", self._open_assembly_editor)
+        self.file_menu.addAction("Merge assemblies...", self._open_assembly_merge)
         self.file_menu.addAction("Use independent Object for selected hand", self._unlink_shared_assembly)
         self._install_frame_review()
         self._install_annotation_policy()
@@ -7052,6 +7054,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             video_path=self.video_path,
             annotation_path="",
             actors_config=self.actors_config,
+            assembly_timeline=self._assembly_data(),
         )
         consistency_by_key: Dict[tuple, List[dict]] = {}
         for item in list(graph.get("consistency_flags", []) or []):
@@ -11882,6 +11885,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     frame_int = int(frame) if frame is not None else None
                 except Exception:
                     frame_int = None
+                obj_id = (resolve_object(hand_data,self._assembly_data(),frame_int)
+                          if role_slug=='noun' and frame_int is not None else hand_data.get(object_key))
+                obj_name = self._object_name_for_id(obj_id, default_for_none="", fallback="")
                 base = {
                     "slot": slot,
                     "role": role_slug,
@@ -12545,7 +12551,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         self._annotation_provenance = {}
         self.frame_review = {}
-        self.shared_assembly = {"schema":"shared-assembly-1","states":[]}
+        self.shared_assembly = empty_timeline()
         self._assembly_default_reference = False
         self.events.clear()
         self.raw_boxes = []
@@ -14198,6 +14204,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     video_path=self.video_path,
                     annotation_path=fp,
                     actors_config=self.actors_config,
+                    assembly_timeline=self._assembly_data(),
                 )
                 save_event_graph_sidecar(fp, graph)
             except Exception:
@@ -17461,6 +17468,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     video_path=self.video_path,
                     annotation_path=fp,
                     actors_config=self.actors_config,
+                    assembly_timeline=self._assembly_data(),
                 )
                 graph_path = save_event_graph_sidecar(fp, graph)
                 self._log(
@@ -17701,6 +17709,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         video_path=self.video_path,
                         annotation_path=annotations_path,
                         actors_config=self.actors_config,
+                        assembly_timeline=self._assembly_data(),
                     ).get("stats", {})
                     or {}
                 )
@@ -18061,14 +18070,16 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         # Validate shared state before clearing existing annotations.
         shared = validate_timeline(data.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
-        if any(x["frame"] >= int(data.get("frame_count", self.player.frame_count)) for x in shared["states"]):
+        if any(x["frame"] >= int(data.get("frame_count", self.player.frame_count)) for x in shared["states"]+shared['merges']):
             raise ValueError("Shared assembly state is outside the video")
+        if any(str(x['object_id']) not in data.get('object_library',{}) for x in shared['states']):
+            raise ValueError('Assembly state references an unknown object ID')
         if 'editor_view' in data:
             self._restore_editor_view(data['editor_view'])
         # Reset state
         self.frame_review = copy.deepcopy(data.get("frame_review",{}))
         self.shared_assembly = shared
-        self._assembly_default_reference = bool(data.get("assembly_default_reference",False))
+        self._assembly_default_reference = data.get("assembly_default_reference",False)
         self.events.clear()
         self.event_id_counter = 0
         self.raw_boxes = []
@@ -18198,7 +18209,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if track_class_id is None and obj_id is not None:
                 track_class_id = obj_class_map.get(obj_id)
             track_obj_id[track_id] = obj_id
-            boxes = info.get("boxes", []) or []
+            boxes = list(info.get("boxes", []) or []) + list(info.get("inactive_boxes", []) or [])
 
             tid_lower = str(track_id).lower()
             cat_lower = category.lower()
@@ -18349,6 +18360,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         "required_review_frames": list(event.get("required_review_frames",[])),
                         "_onset_manually_adjusted": bool(event.get("onset_manually_adjusted",False)),
                         "shared_assembly_ref": bool(event.get("shared_assembly_ref",False)),
+                        "shared_assembly_id": event.get("shared_assembly_id"),
                         "verb": verb,
                         "target_object_id": target_id,
                         "noun_object_id": target_id,
@@ -18685,7 +18697,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         object_library = {}
         for name, uid in sorted(self.global_object_map.items(), key=lambda x: x[1]):
             export_name = self._canonical_label_name(name)
-            entry = {"label": export_name, "category": export_name}
+            category = self.id_to_category.get(name, export_name)
+            if any(s['object_id']==uid and len(s['components'])>1 for s in self._assembly_data().get('states',[])):
+                category = 'assembly'
+            entry = {"label": export_name, "category": category}
             cid = self._class_id_for_object(uid, name)
             if cid is not None:
                 entry["class_id"] = cid
@@ -18787,8 +18802,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     event_entry["verb"] = ""
 
                 interaction = {}
-                target_label = (noun_at(self._assembly_data(), int(h_data.get("interaction_start") if h_data.get("interaction_start") is not None else event.get("frames",[0])[0])) if h_data.get("shared_assembly_ref") else label_for_id(target))
+                assembly_id = reference_id(h_data,self._assembly_data(),final_start)
+                target_label = (noun_at(self._assembly_data(),final_start,assembly_id) if h_data.get("shared_assembly_ref") else label_for_id(target))
                 event_entry["shared_assembly_ref"] = bool(h_data.get("shared_assembly_ref",False))
+                event_entry["shared_assembly_id"] = assembly_id if h_data.get("shared_assembly_ref") else None
                 event_entry["onset_manually_adjusted"] = bool(h_data.get("_onset_manually_adjusted",False))
                 event_entry["required_review_frames"] = list(h_data.get("required_review_frames",[]))
                 if target_label:
@@ -18808,6 +18825,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     ),
                 }
                 event_entry["links"] = links
+                if h_data.get('shared_assembly_ref'):
+                    links['target_track_segments'] = track_segments(self._assembly_data(),assembly_id,final_start,final_end)
 
                 events[side_key].append(event_entry)
 
@@ -18881,6 +18900,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 "object_id": uid,
                 "boxes": b_list,
             }
+            merge = merge_at(self._assembly_data(), uid)
+            if merge:
+                tracks[f'T_OBJ_{uid}']['boxes'] = [b for b in b_list if b['frame'] < merge['frame']]
+                tracks[f'T_OBJ_{uid}']['inactive_boxes'] = [b for b in b_list if b['frame'] >= merge['frame']]
+                tracks[f'T_OBJ_{uid}']['active_end_frame'] = merge['frame'] - 1
+                tracks[f'T_OBJ_{uid}']['merged_into_object_id'] = merge['target_object_id']
             if cid is not None:
                 tracks[f"T_OBJ_{uid}"]["class_id"] = cid
 
@@ -18962,7 +18987,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         )
         self.btn_play.setToolTip("Pause" if playing else "Play")
 
-    def _event_visible_object_ids(self):
+    def _event_visible_object_ids(self, frame=None):
         """Only selected event entities may appear on the canvas; ID 0 is valid."""
         ids = set()
         if self.selected_event_id is None:
@@ -18971,7 +18996,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         for data in draft.values():
             if not isinstance(data, dict):
                 continue
-            for value in (self._hand_noun_object_id(data), self._hand_instrument_object_id(data)):
+            f = self._assembly_frame() if frame is None else frame
+            for value in (resolve_object(data,self._assembly_data(),f), self._hand_instrument_object_id(data)):
                 if value is not None:
                     ids.add(str(value))
         return ids
@@ -18979,7 +19005,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
     def _event_box_visible(self, box):
         if self._normalize_hand_label(box.get("label")):
             return True
-        return box.get("id") is not None and str(box.get("id")) in self._event_visible_object_ids()
+        frame = int(box.get('orig_frame',self._assembly_frame()-self.start_offset)) + int(self.start_offset)
+        uid = box.get('id')
+        return uid is not None and active_id(self._assembly_data(),uid,frame)==uid and str(uid) in self._event_visible_object_ids(frame)
 
     def _refresh_boxes_for_frame(
         self, frame: int, skip_events: bool = False, lightweight: bool = False
@@ -20012,6 +20040,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._push_undo()
         hand_data["noun_object_id"] = obj_id
         hand_data["target_object_id"] = obj_id
+        self._bind_assembly_object(hand_data,obj_id)
         self._set_hand_field_state(
             hand_data,
             "noun_object_id",
@@ -20088,6 +20117,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         else:
             hand_data["noun_object_id"] = object_id
             hand_data["target_object_id"] = object_id
+            self._bind_assembly_object(hand_data,object_id)
             self._set_hand_field_state(
                 hand_data,
                 "noun_object_id",
@@ -21537,12 +21567,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.event_draft = {}
         for actor in self.actors_config:
             self.event_draft[actor["id"]] = self._blank_hand_data()
-            if getattr(self,"_assembly_default_reference",False):
-                self.event_draft[actor["id"]]["shared_assembly_ref"] = True
-                current=state_at(self._assembly_data(),self._assembly_frame())
-                if current:
-                    self.event_draft[actor['id']]['noun_object_id']=current['object_id']
-                    self.event_draft[actor['id']]['target_object_id']=current['object_id']
+            uid = self._assembly_default_id(self._assembly_frame())
+            if uid is not None:
+                self._set_assembly_reference(self.event_draft[actor['id']],uid)
         if hasattr(self, "lbl_event_status"):
             self.lbl_event_status.setText("No event selected.")
 
@@ -21662,6 +21689,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if verb.casefold()=="hold" and (not existing_verb.strip() or hand_data.get("functional_contact_onset") is None) and not onset_resolved(hand_data) and not hand_data.get("_onset_manually_adjusted") and type(hand_data.get("interaction_start")) is int:
             hand_data["functional_contact_onset"]=hand_data["interaction_start"]
         hand_data["verb"] = verb
+        if hand_data.get('shared_assembly_ref'):
+            target_id = reference_id(hand_data,self._assembly_data(),self._assembly_frame())
         hand_data["target_object_id"] = target_id
         hand_data["noun_object_id"] = target_id
         hand_data["instrument_object_id"] = instrument_id

@@ -44,11 +44,11 @@ class CorrectionPropagationMixin:
         following,ok=QInputDialog.getInt(self,'Track corrected instance',f"ID {anchor['id']} — {choice.lower()} ({fps:g} fps):",min(available,int(10*fps)),1,min(available,int(30*fps)))
         if not ok:return
         end=start+direction*following
-        composition=state_at(self._assembly_data(),start)
+        composition=state_at(self._assembly_data(),start,anchor.get('id')) if not actor else None
         shared=not actor and composition is not None and composition['object_id']==anchor.get('id')
         if shared:
             if direction>0:
-                change=next_change(self._assembly_data(),start)
+                change=next_change(self._assembly_data(),start,anchor.get('id'))
                 if change is not None:end=min(end,change-1)
             else:end=max(end,composition['frame'])
         if end==start:
