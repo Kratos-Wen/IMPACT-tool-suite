@@ -10277,7 +10277,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         try:
             for name in _PROJECT_PROFILE.get('noun_classes',[]):
                 if name=='assembly' or instance_category(name,_PROJECT_PROFILE,self.class_map.values()) in known:continue
-                uid=self.object_id_counter;self.object_id_counter+=1
+                configured=_PROJECT_PROFILE.get('singleton_object_ids',{})
+                reserved={value for value in configured.values() if type(value) is int and value>=0}
+                used=set(self.global_object_map.values())|{box.get('id') for box in self.raw_boxes}
+                requested=configured.get(name)
+                uid=requested if type(requested) is int and requested>=0 and requested not in used else self.object_id_counter
+                if uid!=requested:
+                    while uid in used or uid in reserved:uid+=1
+                self.object_id_counter=max(self.object_id_counter,uid+1)
                 self._register_object_entry(uid,name);known.add(instance_category(name,_PROJECT_PROFILE,self.class_map.values()))
         finally:
             for combo,previous in blocked:combo.blockSignals(previous)
