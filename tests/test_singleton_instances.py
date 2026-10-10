@@ -1,5 +1,5 @@
 """Singleton references, ID collisions, conflicting geometry and protected work."""
-import copy,sys
+import copy,json,sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from core.singleton_instances import normalize_machine_instances,catalog_registry,normalize_tracking_frame
@@ -59,4 +59,18 @@ frame['tracks'][1].update(visible=False,bbox_xyxy=None)
 view=normalize_tracking_frame(frame,registry)
 assert len(view['tracks'])==2 and not view['identity_conflicts']
 assert next(t for t in view['tracks'] if t['track_uid']=='anti_vibration_handle_1')['track_id']==1002
+import gzip,tempfile
+from tools.read_canonical_tracking import read_chunk
+with tempfile.TemporaryDirectory() as folder:
+ path=Path(folder)/'chunk.json.gz'
+ chunk=dict(trial='trial_a',frames=[frame],instances=[dict(track_uid=u,track_id=i) for i,u in enumerate(['a','b','c'])],
+  masks=[dict(frame=0,track_id=0,shape=[2,2],bbox_xyxy=[1,2,3,4],encoding='test',data='x')])
+ with gzip.open(path,'wt') as stream:json.dump(chunk,stream)
+ mapped=read_chunk(path,registry)
+ assert mapped['masks'][0]['track_id']==1002 and mapped['masks'][0]['track_uid']=='anti_vibration_handle_1'
+ assert mapped['masks'][0]['source_track_id']==0 and not mapped['withheld_identity_masks']
+ chunk['frames'][0]['tracks'][1].update(visible=True,bbox_xyxy=[10,20,30,40])
+ with gzip.open(path,'wt') as stream:json.dump(chunk,stream)
+ mapped=read_chunk(path,registry)
+ assert not mapped['masks'] and len(mapped['withheld_identity_masks'])==1
 print('SINGLETON_ALIASES_COLLISIONS_MULTIPLE_SCREWS_HUMAN_PROTECTION_CONFLICTS_IDEMPOTENCE_PASS')
