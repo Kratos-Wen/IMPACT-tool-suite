@@ -20,7 +20,7 @@ w._pending_draw_box_role='noun'
 QInputDialog.getItem=lambda *a,**k:(_ for _ in ()).throw(AssertionError('Reasked known identity'))
 w._on_box_edited(None,dict(_action='add',label='anti_vibration_handle',frame=3,x1=2,y1=3,x2=12,y2=22))
 assert w.raw_boxes[-1]['id']==1002 and w._hand_noun_object_id(w.event_draft['Left_hand'])==1002
-saved=w._build_payload_v2();assert saved['object_library']['1002']['label']=='anti_vibration_handle_1'
+saved=w._build_payload_v2();assert saved['object_library']['1002']['label']=='anti_vibration_handle'
 assert saved['provenance']['singleton_identity']==out['provenance']['singleton_identity']
 w._load_annotations_v2(saved)
 assert any(b['id']==1002 and b['orig_frame']==3 for b in w.raw_boxes)

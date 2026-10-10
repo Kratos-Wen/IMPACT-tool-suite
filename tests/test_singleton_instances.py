@@ -25,7 +25,12 @@ assert out['hoi_events']['left_hand'][0]['noun_object_id']==out['hoi_events']['r
 assert out['hoi_events']['left_hand'][0]['instrument_object_id']==1019
 assert out['hoi_events']['left_hand'][0]['annotation_state']['field_suggestions']['noun_object_id']['value']==1002
 assert out['hoi_events']['right_hand'][0]['instrument_object_id']==1020
-assert out['object_library']['1002']['label']=='anti_vibration_handle_1'
+assert out['object_library']['1002']['label']=='anti_vibration_handle'
+legacy_suffix=copy.deepcopy(out)
+legacy_suffix['object_library']['1002']['label']='anti_vibration_handle_1'
+compatible=normalize_machine_instances(legacy_suffix,profile)
+assert compatible['object_library']['1002']['label']=='anti_vibration_handle'
+assert compatible['tracks']['T_OBJ_1002']['object_id']==1002
 assert out['provenance']['raw_model_output']==source['provenance']['raw_model_output']
 assert out['shared_assembly']['states'][0]['object_id']!=1002
 assert {out['tracks'][k]['object_id'] for k in ('s1','s2')}=={11,12}
@@ -58,7 +63,7 @@ assert len(view['identity_conflicts'][0]['candidates'])==2 and frame['tracks'][0
 frame['tracks'][1].update(visible=False,bbox_xyxy=None)
 view=normalize_tracking_frame(frame,registry)
 assert len(view['tracks'])==2 and not view['identity_conflicts']
-assert next(t for t in view['tracks'] if t['track_uid']=='anti_vibration_handle_1')['track_id']==1002
+assert next(t for t in view['tracks'] if t['track_uid']=='anti_vibration_handle')['track_id']==1002
 import gzip,tempfile
 from tools.read_canonical_tracking import read_chunk
 with tempfile.TemporaryDirectory() as folder:
@@ -67,7 +72,7 @@ with tempfile.TemporaryDirectory() as folder:
   masks=[dict(frame=0,track_id=0,shape=[2,2],bbox_xyxy=[1,2,3,4],encoding='test',data='x')])
  with gzip.open(path,'wt') as stream:json.dump(chunk,stream)
  mapped=read_chunk(path,registry)
- assert mapped['masks'][0]['track_id']==1002 and mapped['masks'][0]['track_uid']=='anti_vibration_handle_1'
+ assert mapped['masks'][0]['track_id']==1002 and mapped['masks'][0]['track_uid']=='anti_vibration_handle'
  assert mapped['masks'][0]['source_track_id']==0 and not mapped['withheld_identity_masks']
  chunk['frames'][0]['tracks'][1].update(visible=True,bbox_xyxy=[10,20,30,40])
  with gzip.open(path,'wt') as stream:json.dump(chunk,stream)

@@ -3,7 +3,7 @@ from copy import deepcopy
 from collections import defaultdict
 from core.instance_category import instance_category
 
-VERSION='singleton-identities-1'
+VERSION='singleton-identities-2'
 ROLE_IDS={'object_id','noun_object_id','target_object_id','instrument_object_id','tool_object_id','shared_assembly_id','object_instance_id','instrument_instance_id'}
 RAW_FIELDS={'raw_response','raw_model_output','machine_original','machine_snapshot','raw_snapshot','source_record','provenance'}
 
@@ -77,7 +77,7 @@ def normalize_machine_instances(doc,profile):
     new_library={}
     for old,entry in library.items():
         uid=int(old);new=numeric.get(uid,uid);name=next(iter(categories[uid]));item=deepcopy(entry)
-        if name in groups:item.update(label=name+'_1',category=name)
+        if name in groups:item.update(label=name,category=name)
         elif new!=uid and str(item.get('label','')).endswith('_'+str(uid)):
             item['label']=item['label'][:-len(str(uid))]+str(new)
         new_library.setdefault(str(new),item)
@@ -89,7 +89,7 @@ def normalize_machine_instances(doc,profile):
         entry['source_track_aliases']=list(dict.fromkeys(entry['source_track_aliases']+(track.get('source_track_aliases') or [key])))
         uid=track.get('object_id');name=next(iter(categories[uid])) if uid in categories else None
         if name in groups:
-            entry.update(instance_name=name+'_1',global_instance_uid=str(doc['video_id'])+'::'+name+'_1',identity_status='project_singleton_constraint',human_verified=False)
+            entry.update(instance_name=name,global_instance_uid=str(doc['video_id'])+'::'+name,identity_status='project_singleton_constraint',human_verified=False)
         for box in rows:candidates[renamed].append(box)
     conflicts=[]
     for key,track in new_tracks.items():
@@ -108,7 +108,7 @@ def normalize_machine_instances(doc,profile):
     all_aliases.update({old:new for old,new in aliases.items() if old!=new})
     result['provenance']['singleton_identity']=dict(version=VERSION,singleton_classes=sorted(classes),
         object_id_aliases=all_numeric,track_id_aliases=all_aliases,
-        global_instance_uids={name: str(doc['video_id'])+'::'+name+'_1' for name in groups},
+        global_instance_uids={name: str(doc['video_id'])+'::'+name for name in groups},
         withheld_box_conflicts=prior.get('withheld_box_conflicts',[])+conflicts)
     return result
 
@@ -119,8 +119,8 @@ def catalog_registry(trial,catalog,profile):
     for uid,entry in catalog.items():
         names={instance_category(n,profile) for n in entry.get('category_candidates',[])}
         if len(names)==1 and next(iter(names)) in profile.get('singleton_noun_classes',[]):
-            name=next(iter(names));aliases[uid]=dict(instance_name=name+'_1',track_uid=name+'_1',
-                global_instance_uid=trial+'::'+name+'_1',object_id=profile['singleton_object_ids'][name])
+            name=next(iter(names));aliases[uid]=dict(instance_name=name,track_uid=name,
+                global_instance_uid=trial+'::'+name,object_id=profile['singleton_object_ids'][name])
         elif names.intersection(profile.get('singleton_noun_classes',[])):
             unresolved.append(uid)
     return dict(version=VERSION,trial=trial,aliases=aliases,ambiguous_track_uids=unresolved,
