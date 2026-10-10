@@ -79,6 +79,7 @@ class AutosaveMixin:
         self._autosave_baseline = None
 
     def _open_autosave(self, annotation_path=''):
+        self._autosave_recovered=False
         self._reserve_autosave(self.video_path)
         path = Path(self.video_path).resolve().parent / '.impact-recovery' / (Path(self.video_path).name + '.json')
         self._autosave_path = path
@@ -96,6 +97,7 @@ class AutosaveMixin:
                     'An automatic recovery draft is available, including boxes and tracking.\nRestore it?',
                     QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
                 if answer == QMessageBox.Yes:
+                    self._autosave_recovered=True
                     state = document['state']
                     self._restore_editor_view(dict(start_frame=state.get('start_offset', 0), end_frame=state.get('end_frame')))
                     self.actors_config = state.get('actors_config', self.actors_config)
@@ -117,6 +119,8 @@ class AutosaveMixin:
     def _autosave_tick(self):
         if not self._autosave_path or self._autosave_baseline is None:
             return
+        if hasattr(self,'_remember_project_session'):
+            self._remember_project_session()
         if self._autosave_future:
             if not self._autosave_future.done():
                 return  # No unbounded queue and no concurrent reads of live editor objects.
@@ -147,6 +151,7 @@ class AutosaveMixin:
         self._autosave_tick()
 
     def _stop_autosave(self):
+        if getattr(self,'_autosave_stopped',False):return
         self._finish_autosave()
         self._autosave_tick()
         self._finish_autosave()
@@ -154,3 +159,4 @@ class AutosaveMixin:
         self._autosave_executor.shutdown(wait=True)
         if self._autosave_lock:
             self._autosave_lock.unlock()
+        self._autosave_stopped=True

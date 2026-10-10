@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QSizePolicy, QVBoxLayout, QWidget
+from PyQt5.QtCore import Qt,QTimer
+from PyQt5.QtWidgets import QApplication, QSizePolicy, QVBoxLayout, QWidget,QMessageBox
 
 from ui.placeholder import PlaceholderPane
 from utils.op_logger import OperationLogger
@@ -77,6 +77,7 @@ class MainWindow(QWidget):
                 bool(getattr(self.op_logger, "enabled", False)),
                 bool(self._validation_summary_enabled),
             )
+            QTimer.singleShot(0,self.hoi_window._restore_last_project_session)
         except MissingOptionalDependency as ex:
             self.placeholder = PlaceholderPane(
                 "IMPACT HOI",
@@ -127,8 +128,12 @@ class MainWindow(QWidget):
                 if not self.hoi_window._confirm_close_request(prompt_parent=self):
                     event.ignore()
                     return
+                self.hoi_window._remember_project_session(force=True)
+                self.hoi_window._stop_autosave()
                 self.hoi_window._finalize_close_request()
-        except Exception:
+        except Exception as exc:
+            if self.hoi_window is not None:self.hoi_window._close_request_approved=False
+            QMessageBox.warning(self,'Save still pending',str(exc))
             event.ignore()
             return
         return super().closeEvent(event)

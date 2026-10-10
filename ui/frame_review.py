@@ -15,6 +15,15 @@ class FrameReviewMixin:
             action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
             sid={"Ctrl+Return":"hoi.verify_frame","Alt+N":"hoi.next_review_frame","Alt+P":"hoi.prev_review_frame"}[key]
             self._frame_review_actions[sid]=(action,key)
+        menu.addSeparator()
+        for label,key,sid,fn in [
+            ('Jump to Start','Alt+1','hoi.jump_start',self._jump_to_selected_start),
+            ('Jump to Onset','Alt+2','hoi.jump_onset',self._jump_to_selected_onset),
+            ('Jump to End','Alt+3','hoi.jump_end',self._jump_to_selected_end),
+            ('Previous event keyframe','Alt+Left','hoi.prev_keyframe',lambda:self._jump_event_keyframe(-1)),
+            ('Next event keyframe','Alt+Right','hoi.next_keyframe',lambda:self._jump_event_keyframe(1))]:
+            action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
+            self._frame_review_actions[sid]=(action,key)
         menu.addAction('Mark selected entity not visible...',self._mark_not_visible)
         menu.addAction('Require review at current frame',self._require_current_frame)
         menu.addSeparator()
@@ -30,6 +39,28 @@ class FrameReviewMixin:
         tool=self._hand_instrument_object_id(hand)
         if tool is not None:entities.append('O:'+str(tool))
         return list(dict.fromkeys(entities))
+
+    def _jump_event_keyframe(self,direction):
+        hand=self._selected_hand_data() or {}
+        start,end=hand.get('interaction_start'),hand.get('interaction_end')
+        if type(start) is not int or type(end) is not int:return
+        frames={start,end}
+        onset=hand.get('functional_contact_onset')
+        if type(onset) is int:frames.add(onset)
+        frames.update(hand.get('required_review_frames',[]))
+        uid=reference_id(hand,self._assembly_data(),start)
+        if hand.get('shared_assembly_ref') and uid is not None:
+            frames.update(change_frames(self._assembly_data(),uid,start,end))
+        for text,entities in getattr(self,'frame_review',{}).items():
+            frame=int(text)
+            if any(valid_record(entities.get(key),self._boxes_for_review(key,frame))
+                   for key in self._review_entities(hand,self.selected_hand_label,frame)):
+                frames.add(frame)
+        current=int(self.player.current_frame)
+        options=sorted(f for f in frames if type(f) is int and start<=f<=end and (f-current)*direction>0)
+        if not options:return
+        frame=options[0] if direction>0 else options[-1]
+        self._pause();self.player.seek(frame);self._refresh_boxes_for_frame(frame);self._set_frame_controls(frame)
 
     def _boxes_for_review(self,entity,frame):
         return [b for b in self.raw_boxes if int(b.get('orig_frame',-1))+int(self.start_offset)==frame and

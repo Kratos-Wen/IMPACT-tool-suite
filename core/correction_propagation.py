@@ -1,5 +1,5 @@
 """Bounded, single-instance correction propagation. No implicit acceptance."""
-import copy
+import copy,math
 
 def object_instance(box, uid):
     label=str(box.get("label", "")).strip().lower().replace("-", "_").replace(" ", "_")
@@ -35,7 +35,7 @@ def apply(raw_boxes, request, results):
         frame=int(result["frame"])
         if not 0 < (frame-start)*direction <= (end-start)*direction: raise ValueError("Prediction outside requested interval")
         coords=[float(result[k]) for k in ("x1","y1","x2","y2")]
-        if not (coords[2]>coords[0] and coords[3]>coords[1]): raise ValueError("Invalid predicted box")
+        if not all(math.isfinite(c) for c in coords) or not (coords[2]>coords[0] and coords[3]>coords[1]): raise ValueError("Invalid predicted box")
         if frame in by_frame: raise ValueError("Duplicate predicted frame")
         by_frame[frame]=dict(result)
     # Empty masks have no box: remove old automatic boxes rather than carry them through occlusion.
@@ -52,3 +52,31 @@ def apply(raw_boxes, request, results):
         new.update({k:float(row[k]) for k in ("x1","y1","x2","y2")})
         kept.append(new)
     return kept
+
+def apply_batch(raw_boxes, requests, results):
+    """Validate every branch before applying one undoable batch transaction."""
+    if len(results)!=len(requests):raise ValueError('Incomplete tracking batch')
+    indexed={}
+    for result in results:
+        index=result.get('job_index')
+        if type(index) is not int or not 0<=index<len(requests) or index in indexed:
+            raise ValueError('Invalid tracking branch identity')
+        indexed[index]=result
+    updated=copy.deepcopy(raw_boxes);completed=[]
+    for index,original in enumerate(requests):
+        result=indexed[index];request=dict(original)
+        end=result.get('end');direction=request['direction']
+        if type(end) is not int or not 0<=(end-request['start'])*direction<=(request['end']-request['start'])*direction:
+            raise ValueError('Invalid branch end frame')
+        predicted={row['frame'] for row in result.get('boxes',[])}
+        empty=result.get('empty_frames',[])
+        if len(empty)!=len(set(empty)) or predicted.intersection(empty):raise ValueError('Conflicting frame predictions')
+        if any(type(f) is not int or not 0<(f-request['start'])*direction<=(end-request['start'])*direction for f in empty):
+            raise ValueError('Empty-mask frame outside completed branch')
+        if end==request['start']:
+            if result.get('boxes') or empty:raise ValueError('Predictions beyond unchanged anchor')
+            continue
+        request['end']=end
+        updated=apply(updated,request,result.get('boxes',[]))
+        completed.append((request,result))
+    return updated,completed

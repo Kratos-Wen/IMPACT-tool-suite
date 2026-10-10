@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QFrame,
 )
 from ui.timeline import BaseTimelineRow
-from utils.constants import MIN_VIEW_SPAN, DEFAULT_VIEW_SPAN
+from utils.constants import DEFAULT_VIEW_SPAN
 
 
 class HOITimelineRow(BaseTimelineRow):
@@ -69,6 +69,12 @@ class HOITimelineRow(BaseTimelineRow):
 
     def sizeHint(self) -> QSize:
         return QSize(900, 48)
+
+    def wheelEvent(self,event):
+        parent=self.parent()
+        while parent is not None and not isinstance(parent,HOITimeline):parent=parent.parent()
+        if parent and parent._wheel_navigation(event,self):return
+        super().wheelEvent(event)
 
     def _row_font(self, delta: float = 0.0, weight: int = QFont.Normal) -> QFont:
         font = QFont(self.font())
@@ -486,6 +492,7 @@ class HOITimeline(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(6)
         self.lbl_timeline_caption = QLabel("Timeline")
+        self.rows_frame.setToolTip('Ctrl/Command + wheel: zoom at pointer. Shift + wheel: pan. Alt+1/2/3: Start/Onset/End. Alt+Left/Right: previous/next keyframe.')
         self.lbl_timeline_caption.setStyleSheet("color: #344054; font-weight: 600;")
         controls.addWidget(self.lbl_timeline_caption, 0)
         lbl_start = QLabel("Start")
@@ -554,6 +561,40 @@ class HOITimeline(QWidget):
     def get_view_start(self) -> int:
         return self._view_start
 
+    def _set_view(self,start,span):
+        fc=max(1,int(self._get_fc()))
+        self._view_span=max(1,min(fc,int(span)))
+        self._view_start=max(0,min(fc-self._view_span,int(start)))
+        self._user_span_override=True
+        self._init_sliders()
+        for row in self.actor_rows.values():row.update()
+
+    def _wheel_navigation(self,event,row=None):
+        modifiers=event.modifiers()
+        if not modifiers & (Qt.ControlModifier|Qt.MetaModifier|Qt.ShiftModifier):return False
+        if any(r._dragging for r in self.actor_rows.values()):
+            event.accept();return True
+        delta=event.angleDelta().y() or event.angleDelta().x()
+        if not delta:delta=event.pixelDelta().y() or event.pixelDelta().x()
+        if not delta:return False
+        steps=max(-4.,min(4.,delta/120.))
+        span=self.get_view_span();start=self.get_view_start()
+        if modifiers & (Qt.ControlModifier|Qt.MetaModifier):
+            target=row or next(iter(self.actor_rows.values()),None)
+            if target is None:return False
+            x=event.pos().x() if row else target.mapFrom(self,event.pos()).x()
+            fraction=max(0.,min(1.,(x-self.get_gutter())/max(1,target.width()-self.get_gutter())))
+            anchor=start+fraction*span
+            minimum=min(max(1,int(self._get_fc())),max(1,int(self._get_fps())))
+            new_span=max(minimum,min(int(self._get_fc()),round(span*(1.25**(-steps)))))
+            self._set_view(round(anchor-fraction*new_span),new_span)
+        else:
+            self._set_view(start-round(steps*max(1,span/10)),span)
+        event.accept();return True
+
+    def wheelEvent(self,event):
+        if not self._wheel_navigation(event):super().wheelEvent(event)
+
     def get_view_span(self) -> int:
         if self._view_span is None:
             return max(1, int(self._get_fc()))
@@ -618,20 +659,21 @@ class HOITimeline(QWidget):
 
     def _init_sliders(self):
         fc = max(1, int(self._get_fc()))
+        minimum=min(fc,max(1,int(self._get_fps())))
         self._block_view_signal = True
         self.slider_span.blockSignals(True)
         self.slider_span.setMinimum(0)
         self.slider_span.setMaximum(100)
 
         def span_to_val(span):
-            if fc <= MIN_VIEW_SPAN:
+            if fc <= minimum:
                 return 100
-            span = max(MIN_VIEW_SPAN, min(span, fc))
-            return int(round(100 * (span - MIN_VIEW_SPAN) / max(1, fc - MIN_VIEW_SPAN)))
+            span = max(minimum, min(span, fc))
+            return int(round(100 * (span - minimum) / max(1, fc - minimum)))
 
         if self._view_span is None:
             self._view_span = min(fc, DEFAULT_VIEW_SPAN)
-        if fc <= MIN_VIEW_SPAN:
+        if fc <= minimum:
             self._view_span = fc
         self.slider_span.setValue(span_to_val(self._view_span))
         self.slider_span.blockSignals(False)
@@ -662,11 +704,12 @@ class HOITimeline(QWidget):
 
     def _on_view_span_changed(self, val: int):
         fc = max(1, int(self._get_fc()))
-        if fc <= MIN_VIEW_SPAN:
+        minimum=min(fc,max(1,int(self._get_fps())))
+        if fc <= minimum:
             new_span = fc
         else:
-            new_span = int(round(MIN_VIEW_SPAN + (fc - MIN_VIEW_SPAN) * val / 100.0))
-            new_span = max(MIN_VIEW_SPAN, min(new_span, fc))
+            new_span = int(round(minimum + (fc - minimum) * val / 100.0))
+            new_span = max(minimum, min(new_span, fc))
         if self._view_start + new_span > fc:
             self._view_start = max(0, fc - new_span)
         self._view_span = new_span

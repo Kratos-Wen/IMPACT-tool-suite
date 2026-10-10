@@ -41,14 +41,18 @@ with tempfile.TemporaryDirectory() as d:
  w.raw_boxes=[dict(id=0,orig_frame=0,label='Left_hand',x1=1,y1=2,x2=10,y2=12),dict(id=0,orig_frame=0,label='part',x1=15,y1=15,x2=40,y2=45)]
  w._selected_edit_box=w.raw_boxes[1]
  w._selected_hand_data=lambda:dict(interaction_start=0,interaction_end=2,noun_object_id=0)
+ w.selected_event_id=1;w.selected_hand_label='Left_hand'
+ w.event_draft={'Left_hand':dict(interaction_start=0,interaction_end=2,noun_object_id=0)}
+ w._choose_correction_batch=lambda targets:([t for t in targets if t['entity']=='O:0'],0,1)
  started=[]
  def capture_start(process,executable,arguments):
   request=json.loads(Path(arguments[1]).read_text(encoding='utf-8'));started.append(request)
-  Path(arguments[2]).write_text(json.dumps(dict(end=request['end'],boxes=[dict(frame=request['end'],x1=16,y1=15,x2=41,y2=45)],empty_frames=[])))
+  branch=request['requests'][0]
+  Path(arguments[2]).write_text(json.dumps(dict(results=[dict(job_index=0,end=branch['end'],boxes=[dict(frame=branch['end'],x1=16,y1=15,x2=41,y2=45)],empty_frames=[])])))
  with patch.object(QInputDialog,'getItem',return_value=('Following frames',True)),patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):
   w._start_correction_propagation()
- assert len(started)==1 and started[0]['id']==0
- assert started[0]['bbox']==[15,15,40,45]
+ assert len(started)==1 and started[0]['requests'][0]['id']==0
+ assert started[0]['requests'][0]['bbox']==[15,15,40,45]
  w._correction_process.finished.emit(1,QProcess.NormalExit)
  old_boxes=[dict(b) for b in w.raw_boxes]
  with patch.object(QInputDialog,'getItem',return_value=('Following frames',True)),patch.object(QInputDialog,'getInt',return_value=(1,True)),patch.object(QProcess,'start',new=capture_start):

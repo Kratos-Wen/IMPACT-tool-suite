@@ -44,6 +44,7 @@ from PyQt5.QtWidgets import (
 )
 from ui.mixins import FrameControlMixin
 from ui.autosave import AutosaveMixin
+from ui.project_session import ProjectSessionMixin
 from ui.label_glossary import LabelGlossaryMixin, decorate_combo
 from core.safe_storage import atomic_json
 from ui.correction_propagation import CorrectionPropagationMixin
@@ -1046,7 +1047,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, FrameControlMixin, QWidget):
+class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, ProjectSessionMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -2205,7 +2206,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_inline_edit_boxes.toggled.connect(self._set_edit_boxes_enabled)
         inline_actions.addWidget(self.btn_inline_edit_boxes)
         self.btn_correct_track = QPushButton("Track Correction")
-        self.btn_correct_track.setToolTip("Correct one instance, then retrack a bounded interval. Keeps human anchors and other IDs; Undo supported.")
+        self.btn_correct_track.setToolTip("Choose event targets and a forward/backward interval. Preserves human anchors and other IDs; one Undo restores the batch.")
         self.btn_correct_track.clicked.connect(self._start_correction_propagation)
         inline_actions.addWidget(self.btn_correct_track)
         self.btn_inline_jump_start = QPushButton("Start")
@@ -14406,13 +14407,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._log_annotation_ready_state(log_event or "apply_video_session")
         return True
 
-    def _load_video(self):
-        fp, _ = QFileDialog.getOpenFileName(
-            self,
-            "Load Video",
-            "",
-            "Video Files (*.mp4 *.avi *.mov *.mkv);;All Files (*)",
-        )
+    def _load_video(self, path=None, resume_annotation=''):
+        if isinstance(path,str) and path:
+            fp=path
+        else:
+            fp, _ = QFileDialog.getOpenFileName(
+                self,"Load Video","","Video Files (*.mp4 *.avi *.mov *.mkv);;All Files (*)")
         if not fp:
             return
         target_norm = self._normalized_video_path(fp)
@@ -14465,12 +14465,20 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             QMessageBox.warning(self, "Task loading failed", str(exc))
             return
         if not task_loaded:
-            self._auto_load_local_assets_for_video(fp)
-            self._open_autosave()
+            if resume_annotation and Path(resume_annotation).is_file():
+                self._load_annotations_v2(json.loads(Path(resume_annotation).read_text(encoding='utf-8-sig')),annotation_path=resume_annotation)
+                self.current_annotation_path=resume_annotation
+                self._mark_hoi_saved()
+            else:
+                self._auto_load_local_assets_for_video(fp)
+            self._open_autosave(self.current_annotation_path)
         self._log_annotation_ready_state("hoi_load_video_assets")
         self._maybe_warn_full_assist_semantic_unavailable("hoi_load_video_assets")
         self._mark_query_calibration_dirty()
         self._update_onboarding_banner()
+
+        self._remember_project_session(force=True)
+        return True
 
     def _load_bboxes(self):
         """
@@ -20727,6 +20735,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             e.ignore()
             return
         try:
+            self._remember_project_session(force=True)
             self._stop_autosave()
         except Exception as exc:
             self._close_request_approved = False

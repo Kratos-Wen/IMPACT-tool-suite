@@ -2,7 +2,7 @@
 import json, os, sys, tempfile, time
 from pathlib import Path
 
-def run(request, output):
+def run(request, output=None, predictor=None):
     started=time.perf_counter()
     import cv2, numpy as np, torch
     from sam2.build_sam import build_sam2_video_predictor
@@ -14,7 +14,8 @@ def run(request, output):
     if device=="cuda":
         torch.cuda.set_per_process_memory_fraction(float(request.get("gpu_memory_fraction",0.5)))
         torch.cuda.reset_peak_memory_stats()
-    predictor=build_sam2_video_predictor(request["config"], request["checkpoint"], device=device)
+    if predictor is None:
+        predictor=build_sam2_video_predictor(request["config"], request["checkpoint"], device=device)
     start=request["start"]; end=request["end"]; rows=[]; empty=[]; completed_end=start; stop_reason=""; previous=list(request["bbox"])
     direction=1 if end>start else -1
     # Decode only the requested interval; never load the complete video into model memory.
@@ -42,9 +43,32 @@ def run(request, output):
                     stop_reason="Paused before frame %d: box area changed >4x or center moved >max(32px,3x prior box side). Correct the first uncertain frame and retrack."%(start+direction*idx)
                     break
                 rows.append(dict(frame=start+direction*idx,**dict(zip(("x1","y1","x2","y2"),coords)))); previous=coords; completed_end=start+direction*idx
-    Path(output).write_text(json.dumps({"boxes":rows,"empty_frames":empty,"start":start,"end":completed_end,"requested_end":end,"stop_reason":stop_reason,"elapsed_seconds":time.perf_counter()-started,"inference_seconds":time.perf_counter()-inference_started,"peak_cuda_allocated_bytes":torch.cuda.max_memory_allocated() if device=="cuda" else None}),encoding="utf-8")
+    result={"boxes":rows,"empty_frames":empty,"start":start,"end":completed_end,"requested_end":end,"stop_reason":stop_reason,"elapsed_seconds":time.perf_counter()-started,"inference_seconds":time.perf_counter()-inference_started,"peak_cuda_allocated_bytes":torch.cuda.max_memory_allocated() if device=="cuda" else None}
+    if output:Path(output).write_text(json.dumps(result),encoding="utf-8")
+    return result
+
+def run_batch(request,output):
+    """One model instance; bounded branches run sequentially to limit local memory."""
+    import torch
+    from sam2.build_sam import build_sam2_video_predictor
+    jobs=request.get('requests',[])
+    if not jobs:raise ValueError('Select at least one tracking branch')
+    device=request.get('device','cpu')
+    if device not in ('cpu','cuda'):raise ValueError('Invalid device')
+    threads=max(1,int(request.get('cpu_threads',1)))
+    if os.environ.get('SLURM_CPUS_PER_TASK'):threads=min(threads,int(os.environ['SLURM_CPUS_PER_TASK']))
+    torch.set_num_threads(threads)
+    if device=='cuda':torch.cuda.set_per_process_memory_fraction(float(request.get('gpu_memory_fraction',0.5)))
+    predictor=build_sam2_video_predictor(request['config'],request['checkpoint'],device=device)
+    results=[]
+    for index,job in enumerate(jobs):
+        child=dict(request);child.pop('requests');child.update(job)
+        result=run(child,predictor=predictor);result['job_index']=index;results.append(result)
+    Path(output).write_text(json.dumps(dict(results=results)),encoding='utf-8')
 
 if __name__=="__main__":
-    try: run(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")), sys.argv[2])
+    try:
+        request=json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+        (run_batch if 'requests' in request else run)(request,sys.argv[2])
     except Exception as exc:
         print(type(exc).__name__+": "+str(exc), file=sys.stderr); sys.exit(1)
