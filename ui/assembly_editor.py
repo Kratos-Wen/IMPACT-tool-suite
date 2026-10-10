@@ -1,13 +1,13 @@
 """Per-instance composition shared by hands referencing the same ID."""
 from copy import deepcopy
-import re
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QDialog,QVBoxLayout,QLabel,QSpinBox,QComboBox,QListWidget,
     QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox)
 from core.assembly_timeline import (state_at,put_state,noun_at,validate_timeline,empty_timeline,
     reference_id,resolve_object,active_id,active_object_ids,merge_instances)
 from core.project_profile import PROFILE
-from core.annotation_migration import model_from_trial,canonical_noun
+from core.annotation_migration import model_from_trial
+from core.instance_category import instance_category
 from core.label_glossary import label_tooltip
 
 class AssemblyEditorMixin:
@@ -66,7 +66,7 @@ class AssemblyEditorMixin:
         """
         data=self._assembly_data();names={uid:name for name,uid in self.global_object_map.items()}
         ids={s['object_id'] for s in data.get('states',[])}
-        ids.update(uid for uid,name in names.items() if canonical_noun(re.sub(r'_\d+$','',name),PROFILE)=='assembly')
+        ids.update(uid for uid,name in names.items() if instance_category(name,PROFILE)=='assembly')
         rows=[]
         for uid in sorted(ids):
             state=state_at(data,frame,uid,follow_merges=False)
@@ -75,7 +75,7 @@ class AssemblyEditorMixin:
         hand=self.event_draft.get(self.selected_hand_label,{})
         uid=reference_id(hand,data,frame)
         if uid is not None and uid not in ids and uid in names:
-            part=canonical_noun(re.sub(r'_\d+$','',names[uid]),PROFILE)
+            part=instance_category(names[uid],PROFILE)
             if part in PROFILE.get('assembly_components',[]):
                 rows.append((uid,f'Start composition on selected {part} (keep ID {uid})',part))
         return rows

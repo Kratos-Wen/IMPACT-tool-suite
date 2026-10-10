@@ -10270,14 +10270,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if added:
             self._update_verb_combo();self.label_panel.refresh()
         if not _PROJECT_PROFILE.get('create_default_noun_instances',False):return
-        known={self._norm_category(name) for name in self.global_object_map}
+        from core.instance_category import instance_category
+        known={instance_category(name,_PROJECT_PROFILE,self.class_map.values()) for name in self.global_object_map}
         combos=[getattr(self,name,None) for name in ('combo_target','combo_instrument','combo_inline_noun','combo_inline_instrument')]
         blocked=[(combo,combo.blockSignals(True)) for combo in combos if combo is not None]
         try:
             for name in _PROJECT_PROFILE.get('noun_classes',[]):
-                if name=='assembly' or self._norm_category(name) in known:continue
+                if name=='assembly' or instance_category(name,_PROJECT_PROFILE,self.class_map.values()) in known:continue
                 uid=self.object_id_counter;self.object_id_counter+=1
-                self._register_object_entry(uid,name+'_1');known.add(self._norm_category(name))
+                self._register_object_entry(uid,name);known.add(instance_category(name,_PROJECT_PROFILE,self.class_map.values()))
         finally:
             for combo,previous in blocked:combo.blockSignals(previous)
 
@@ -20474,11 +20475,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _choose_drawn_instance_id(self, label):
         """Require an explicit choice before a class name creates another instance."""
-        category=self._norm_category(re.sub(r'_\d+$','',str(label or '')))
+        from core.instance_category import instance_category
+        category=instance_category(label,_PROJECT_PROFILE,self.class_map.values())
         candidates=[]
         for name,uid in self.global_object_map.items():
             base=self.id_to_category.get(name,name)
-            if self._norm_category(re.sub(r'_\d+$','',base)) != category:
+            if instance_category(base,_PROJECT_PROFILE,self.class_map.values()) != category:
                 continue
             if active_id(self._assembly_data(),uid,self._assembly_frame()) != uid:
                 continue
@@ -20487,15 +20489,16 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return None, True
         candidates.sort()
         options=[f'Use existing [{uid}] {name}' for uid,name in candidates]
-        options.append(f'Create a new {category} instance')
+        singleton=category in _PROJECT_PROFILE.get('singleton_noun_classes',[])
+        if not singleton:options.append(f'Create a new {category} instance')
         choice,ok=QInputDialog.getItem(self,'Box instance',
-            'Which physical object does this box belong to?',options,0,False)
+            ('Reuse this item’s ID across events. This project has one '+category+'.' if singleton else 'Which physical object does this box belong to?'),options,0,False)
         if not ok:
             return None, False
         for option,(uid,name) in zip(options,candidates):
             if choice==option:
                 return uid, True
-        return None, True
+        return (None,False) if singleton else (None,True)
 
     def _resolve_label_and_id(self, text: str):
         """
