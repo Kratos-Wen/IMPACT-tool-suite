@@ -131,7 +131,10 @@ with tempfile.TemporaryDirectory(prefix='Tracking space 中文 ') as d:
     # A missing interpreter is a visible task failure, not a modal interruption.
     reopened._release_tracking_service();wait(lambda:reopened._tracking_service is None)
     os.environ['IMPACT_SAM2_PYTHON']=str(root/'missing python')
-    reopened._start_correction_propagation();failed=reopened._tracking_jobs[reopened._tracking_active]
+    existing=set(reopened._tracking_jobs);reopened._start_correction_propagation()
+    created=set(reopened._tracking_jobs)-existing;assert len(created)==1
+    # Windows may deliver FailedToStart synchronously and clear the active ID.
+    failed=reopened._tracking_jobs[created.pop()]
     wait(lambda:failed['status']=='failed');assert failed['error']
     reopened._mark_hoi_saved();reopened.close();timer.stop()
 assert not warnings,warnings
