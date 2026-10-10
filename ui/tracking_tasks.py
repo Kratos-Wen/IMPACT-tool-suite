@@ -13,6 +13,7 @@ from core.frame_review import valid_record
 class TrackingTasksMixin:
     def _init_tracking_tasks(self):
         self._tracking_jobs={};self._tracking_active=None;self._tracking_service=None;self._correction_process=None
+        self._tracking_service_stopping=False
         self._tracking_stdout=bytearray();self._tracking_stderr=bytearray();self._tracking_closing=False
         self._tracking_row=QWidget(self);row=QHBoxLayout(self._tracking_row);row.setContentsMargins(0,0,0,0)
         self._tracking_label=QLabel('Tracking: ready',self);self._tracking_label.setMinimumWidth(0);row.addWidget(self._tracking_label,1)
@@ -100,6 +101,7 @@ class TrackingTasksMixin:
         service=self._tracking_service
         if service is not None and service.state()!=QProcess.NotRunning:return
         service=QProcess(self);self._tracking_service=service;self._tracking_stdout.clear();self._tracking_stderr.clear()
+        self._tracking_service_stopping=False
         env=QProcessEnvironment.systemEnvironment()
         for key in ('OMP_NUM_THREADS','MKL_NUM_THREADS','OPENBLAS_NUM_THREADS','NUMEXPR_NUM_THREADS'):env.insert(key,'1')
         env.insert('PYTHONUNBUFFERED','1');service.setProcessEnvironment(env)
@@ -116,6 +118,9 @@ class TrackingTasksMixin:
 
     def _start_next_tracking_job(self):
         if self._tracking_active or self._tracking_closing:return
+        # A shutdown command is already in the pipe. Leave new jobs queued
+        # until finished starts a fresh backend, rather than writing after it.
+        if self._tracking_service_stopping:return
         queue=sorted((j for j in self._tracking_jobs.values() if j['status']=='queued'),key=lambda j:j['created'])
         if not queue:
             if self._tracking_service:self._tracking_idle_timer.start()
@@ -163,7 +168,7 @@ class TrackingTasksMixin:
 
     def _tracking_service_exited(self,service,code):
         if service is not self._tracking_service:return
-        self._tracking_service=None;self._correction_process=None
+        self._tracking_service=None;self._correction_process=None;self._tracking_service_stopping=False
         if self._tracking_active:
             job=self._tracking_jobs[self._tracking_active]
             if job['status']=='running':job['status']='interrupted' if self._tracking_closing else 'failed';job['error']=bytes(self._tracking_stderr).decode(errors='replace')[-2000:] or 'Tracking backend stopped. Completed candidates are retained.'
@@ -295,7 +300,8 @@ class TrackingTasksMixin:
 
     def _release_tracking_service(self):
         if self._tracking_active:return
-        if self._tracking_service:self._tracking_service.write(b'{"shutdown": true}\n')
+        if self._tracking_service:
+            self._tracking_service_stopping=True;self._tracking_service.write(b'{"shutdown": true}\n')
 
     def _stop_tracking_tasks(self):
         self._tracking_closing=True;self._tracking_idle_timer.stop();self._tracking_edit_timer.stop()

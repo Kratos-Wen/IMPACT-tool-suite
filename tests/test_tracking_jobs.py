@@ -42,5 +42,18 @@ class MergeTests(unittest.TestCase):
         old=dict(event_id=1,actor='Left_hand',role='object',identity=0,object_name='part',start=0,end=5)
         self.assertTrue(bindings_valid(old,dict(old,verb='align',onset=1,end=4)))
         self.assertFalse(bindings_valid(old,dict(old,identity=8)))
+    def test_large_background_track_list_is_not_rescanned_per_frame(self):
+        class ObservedList(list):
+            passes=0
+            def __iter__(self):
+                type(self).passes+=1
+                return super().__iter__()
+        self.request['end']=60
+        self.boxes=[dict(self.boxes[0],orig_frame=f,source='manual' if f==0 else 'auto') for f in range(61)]
+        current=ObservedList(self.boxes+[dict(self.boxes[1],id=i+1,orig_frame=i%1000) for i in range(10000)])
+        self.result.update(end=60,boxes=[dict(frame=f,x1=2,y1=3,x2=12,y2=13) for f in range(1,61)])
+        out,branch,conflict=self.merge(current,end=60)
+        self.assertEqual(len(out),len(current));self.assertEqual(branch[0]['end'],60)
+        self.assertIsNone(conflict);self.assertLess(ObservedList.passes,8)
 
 if __name__=='__main__':unittest.main()

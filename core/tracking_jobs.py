@@ -12,6 +12,14 @@ def frame_rows(boxes, request, frame):
 def geometry(rows):
     return sorted((str(b.get('id')),str(b.get('label')),*(float(b[k]) for k in ('x1','y1','x2','y2'))) for b in rows)
 
+def _rows_by_frame(boxes,request):
+    lo,hi=sorted((request['start'],request['end']));indexed={}
+    for box in boxes:
+        if not matches(box,request):continue
+        frame=int(box['orig_frame'])+request['offset']
+        if lo<=frame<=hi:indexed.setdefault(frame,[]).append(box)
+    return indexed
+
 def merge_branch(current, baseline, request, result, allowed_end, changed_review_frames=()):
     """Cut at the first edited frame. Seed changes invalidate only this branch."""
     start=request['start'];direction=request['direction'];end=result.get('end')
@@ -20,7 +28,8 @@ def merge_branch(current, baseline, request, result, allowed_end, changed_review
     expected=set(range(start+direction,end+direction,direction)) if end!=start else set()
     supplied={r['frame'] for r in result.get('boxes',[])}|set(result.get('empty_frames',[]))
     if supplied!=expected:raise ValueError('Tracking result has gaps; retain it without applying')
-    original_anchor=frame_rows(baseline,request,start);live_anchor=frame_rows(current,request,start)
+    original_rows=_rows_by_frame(baseline,request);live_rows=_rows_by_frame(current,request)
+    original_anchor=original_rows.get(start,[]);live_anchor=live_rows.get(start,[])
     if len(live_anchor)!=1 or geometry(original_anchor)!=geometry(live_anchor):
         return copy.deepcopy(current),None,dict(reason='anchor_changed',frame=start)
     if allowed_end is None or (allowed_end-start)*direction<0:
@@ -28,7 +37,7 @@ def merge_branch(current, baseline, request, result, allowed_end, changed_review
     end=start+direction*min((end-start)*direction,(allowed_end-start)*direction)
     conflict=None
     for frame in range(start+direction,end+direction,direction):
-        old=frame_rows(baseline,request,frame);live=frame_rows(current,request,frame)
+        old=original_rows.get(frame,[]);live=live_rows.get(frame,[])
         if old!=live or frame in changed_review_frames or any(protected(b) for b in live):
             conflict=dict(reason='intermediate_frame_changed',frame=frame)
             end=frame-direction;break

@@ -104,6 +104,12 @@ with tempfile.TemporaryDirectory(prefix='Tracking space 中文 ') as d:
     assert w._tracking_service is service and manual in w.raw_boxes
     assert retry['request']['requests'][0]['start']==13
     assert all(not b.get('human_verified',False) for b in w.raw_boxes if b.get('source')=='sam2_correction_proposal')
+    # Submitting during idle shutdown must wait for a new backend, rather than
+    # write a command after shutdown and lose the task when the process exits.
+    previous=set(w._tracking_jobs);w._release_tracking_service();w._start_correction_propagation()
+    replacement=w._tracking_jobs[(set(w._tracking_jobs)-previous).pop()]
+    assert replacement['status']=='queued'
+    wait(lambda:replacement['status']=='applied');assert w._tracking_service is not service
     # A seed edit invalidates its old branch and automatically uses the new seed.
     w._start_correction_propagation();third=w._tracking_jobs[w._tracking_active]
     wait(lambda:third['completed']>=1)
