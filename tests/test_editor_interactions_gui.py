@@ -1,11 +1,12 @@
 """Exercise interleaved editor actions through real Qt callbacks."""
-import copy, json, os, sys
+import copy, json, os, sys, tempfile
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import _bootstrap_qt_runtime
 _bootstrap_qt_runtime()
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import QEvent,QElapsedTimer
 app = QApplication([])
 for name in ('information', 'question', 'warning'):
     setattr(QMessageBox, name, lambda *a, **k: QMessageBox.No)
@@ -17,6 +18,9 @@ PROFILE.clear(); PROFILE.update(anomaly_labels=['attribute_a'], noun_classes=['p
 refresh_aliases()
 from ui.hoi_window import HOIWindow
 from core.frame_review import valid_record
+feedback_tmp=tempfile.TemporaryDirectory(prefix='impact stress feedback ')
+HOIWindow._semantic_runtime_artifacts_dir=lambda self:feedback_tmp.name
+HOIWindow._shared_semantic_adapter_file=lambda self:str(Path(feedback_tmp.name)/'shared.pt')
 w = HOIWindow(); w._autosave_timer.stop(); w.player.frame_count=90; w.player.frame_rate=15
 payload = dict(video_id='trial',frame_count=90,fps=15,
     object_library={'0':dict(label='part_1',category='part'),'5':dict(label='part_2',category='part'),'8':dict(label='tool_1',category='tool')},
@@ -96,5 +100,22 @@ w.shared_assembly=put_state(base,dict(frame=2,object_id=0,components=['part']))
 w.shared_assembly=put_state(w.shared_assembly,dict(frame=6,object_id=5,components=['part']))
 assert 'Object ID changes inside event; split at the change' not in w._policy_missing(linked)
 assert w._hand_noun_object_id(linked)==0, 'A different instance must never steal this event reference'
-w._stop_autosave();w.close()
+# The stress fixture intentionally remains incomplete. Approve its teardown
+# explicitly so a rejected close does not leave native Qt objects to Python exit.
+# Do not exit the interpreter while the real optional CPU learning worker runs.
+# This also checks the production close guard rather than bypassing training.
+worker=w._semantic_adapter_train_worker
+if worker is not None and worker.isRunning():
+    w._close_request_approved=True
+    assert not w._confirm_close_request(), 'Close accepted while semantic training was running'
+    w._close_request_approved=False
+    deadline=QElapsedTimer();deadline.start()
+    while worker.isRunning():
+        assert deadline.elapsed()<60000, 'Learning worker did not finish'
+        app.processEvents();worker.wait(10)
+    app.processEvents()
+w._close_request_approved=True
+w._mark_hoi_saved();w.close();w.player.release_media()
+w.deleteLater();app.sendPostedEvents(None,QEvent.DeferredDelete)
+feedback_tmp.cleanup()
 print('EDITOR_40_INTERLEAVED_CYCLES_HAND_ISOLATION_REVIEW_INVALIDATION_UNDO_DELETE_ROUNDTRIP_PASS')

@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (QMessageBox,QFileDialog,QProgressDialog,QDialog,QVB
     QLabel,QListWidget,QListWidgetItem,QSpinBox,QFormLayout,QDialogButtonBox)
 from core.correction_propagation import plan,apply_batch
 from core.assembly_timeline import next_change,state_at,resolve_object
+from core.frame_review import valid_record
 
 class CorrectionPropagationMixin:
     def _correction_targets(self):
@@ -72,6 +73,12 @@ class CorrectionPropagationMixin:
                     else:
                         change=next_change(self._assembly_data(),start,anchor['id'])
                         if change is not None:stop=min(stop,change-1)
+                # Confirmed occlusion has no geometry, but is still a human anchor.
+                entity='H:'+actor if actor else 'O:'+str(anchor['id'])
+                for text,row in getattr(self,'frame_review',{}).items():
+                    frame=int(text)
+                    if 0<(frame-start)*direction<=(stop-start)*direction and valid_record(row.get(entity),self._boxes_for_review(entity,frame)):
+                        stop=frame-direction
                 if stop==start:continue
                 try:
                     request=plan(self.raw_boxes,anchor,start,stop,int(self.start_offset),entity_kind='hand' if actor else 'object')
@@ -115,6 +122,12 @@ class CorrectionPropagationMixin:
         snapshot=copy.deepcopy(self.raw_boxes);video=self.video_path;offset=int(self.start_offset)
         assembly_snapshot=copy.deepcopy(self._assembly_data());events_snapshot=copy.deepcopy(self.events)
         draft_snapshot=copy.deepcopy(self.event_draft)
+        review_snapshot=copy.deepcopy(getattr(self,'frame_review',{}))
+        suppressed_snapshot=copy.deepcopy(getattr(self,'_suppressed_hand_boxes',[]))
+        def unchanged():
+            return (self.video_path==video and int(self.start_offset)==offset and self.raw_boxes==snapshot
+                and self._assembly_data()==assembly_snapshot and self.events==events_snapshot and self.event_draft==draft_snapshot
+                and getattr(self,'frame_review',{})==review_snapshot and getattr(self,'_suppressed_hand_boxes',[])==suppressed_snapshot)
         self._checkpoint_tracking()
         process=QProcess(self);self._correction_process=process
         progress=QProgressDialog(f'{len(chosen)} targets; {len(requests)} direction branches on {request["device"]}.\n'+'\n'.join(notes[:6]),'Cancel',0,0,self)
@@ -130,7 +143,7 @@ class CorrectionPropagationMixin:
                 if canceled[0]:return
                 if code!=0 or not out.exists():
                     QMessageBox.warning(self,'Tracking failed',bytes(stderr).decode(errors='replace')[-2000:] or 'Backend not installed or tracking failed.');return
-                if self.video_path!=video or int(self.start_offset)!=offset or self.raw_boxes!=snapshot or self._assembly_data()!=assembly_snapshot or self.events!=events_snapshot or self.event_draft!=draft_snapshot:
+                if not unchanged():
                     QMessageBox.information(self,'Track','Annotations changed during tracking. Discarded proposals; rerun from the corrected frame.');return
                 result=json.loads(out.read_text(encoding='utf-8'))
                 updated,completed=apply_batch(self.raw_boxes,requests,result.get('results',[]))
@@ -139,6 +152,8 @@ class CorrectionPropagationMixin:
                 lines=[f'{r["entity_kind"]} ID {r["id"]}: {r["start"]} → {r["end"]}, {len(rows.get("boxes",[]))} boxes'+(' — '+rows['stop_reason'] if rows.get('stop_reason') else '') for r,rows in completed]
                 answer=QMessageBox.question(self,'Apply tracking proposals','\n'.join(lines)+'\nReplace automatic boxes in these intervals? Human anchors and other IDs are preserved.\nOne Undo restores the batch. Accepting does not mark frames human-verified.')
                 if answer!=QMessageBox.Yes:return
+                if not unchanged():
+                    QMessageBox.information(self,'Track','Annotations changed while confirming. Discarded proposals; rerun from the corrected frame.');return
                 self._push_undo();self.raw_boxes=updated
                 suppressed=set(getattr(self,'_suppressed_hand_boxes',[]))
                 for r,rows in completed:

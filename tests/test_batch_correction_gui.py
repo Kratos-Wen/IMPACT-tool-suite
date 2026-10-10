@@ -20,6 +20,7 @@ QMessageBox.question=lambda *a,**k:QMessageBox.Yes
 from ui.hoi_window import HOIWindow
 from core.assembly_timeline import empty_timeline,put_state
 from core.correction_propagation import apply_batch
+w_failures=[]
 w=HOIWindow();w._autosave_timer.stop();w.player.frame_count=40;w.player.frame_rate=15
 payload=dict(video_id='trial',frame_count=40,fps=15,
  object_library={str(i):dict(label=('assembly' if i!=8 else 'tool')+'_'+str(i),category='assembly' if i!=8 else 'tool') for i in [0,5,8]},
@@ -55,6 +56,14 @@ assert len(requests)==6
 assert next(r for r in requests if r['entity_kind']=='object' and r['id']==0 and r['direction']==1)['end']==11
 assert next(r for r in requests if r['entity_kind']=='object' and r['id']==8 and r['direction']==1)['end']==12
 assert any(r['entity_kind']=='hand' and r['id']==0 for r in requests)
+# A human-confirmed invisible frame is an anchor even though it has no box.
+before_boxes=copy.deepcopy(w.raw_boxes)
+w.raw_boxes=[b for b in w.raw_boxes if not (b['label']=='Left_hand' and b['orig_frame']==14)]
+w.frame_review={'14':{'H:Left_hand':{'state':'not_visible'}}}
+bounded,_=w._plan_correction_batch(chosen,begin,end)
+if next(r for r in bounded if r['entity_kind']=='hand' and r['direction']==1)['end']!=13:
+ w_failures.append('Human-confirmed invisible anchor was crossed')
+w.raw_boxes=before_boxes;w.frame_review={}
 results=[dict(job_index=i,end=r['end'],boxes=[dict(frame=r['end'],x1=2,y1=2,x2=12,y2=12)],empty_frames=[]) for i,r in enumerate(requests)]
 old=copy.deepcopy(w.raw_boxes);updated,completed=apply_batch(old,requests,results)
 assert w.raw_boxes==old and len(completed)==6
@@ -82,5 +91,24 @@ with tempfile.TemporaryDirectory() as d:
  w._correction_process.finished.emit(0,QProcess.NormalExit)
  assert w.raw_boxes==updated
  assert not warnings,warnings
+ # Qt keeps processing signals while the confirmation dialog is open. A human
+ # visibility decision made then must invalidate the old proposal before apply.
+ w.event_draft['Left_hand']['verb']='hold'
+ w.raw_boxes=[b for b in w.raw_boxes if not (b['label']=='Left_hand' and b['orig_frame']==14)]
+ w.frame_review={};w._rebuild_bboxes_from_raw()
+ def complete_capture(process,executable,args):
+  request=json.loads(Path(args[1]).read_text())
+  complete=[dict(job_index=i,end=r['end'],empty_frames=[],boxes=[dict(frame=f,x1=2,y1=2,x2=12,y2=12)
+   for f in range(r['start']+r['direction'],r['end']+r['direction'],r['direction'])]) for i,r in enumerate(request['requests'])]
+  Path(args[2]).write_text(json.dumps(dict(results=complete)))
+ def review_while_confirming(*a,**k):
+  w.frame_review={'14':{'H:Left_hand':{'state':'not_visible'}}}
+  return QMessageBox.Yes
+ depth=len(w._hoi_undo_stack)
+ with patch.object(QProcess,'start',new=complete_capture):w._start_correction_propagation()
+ with patch.object(QMessageBox,'question',new=review_while_confirming):w._correction_process.finished.emit(0,QProcess.NormalExit)
+ if any(b['label']=='Left_hand' and b['orig_frame']==14 for b in w.raw_boxes) or len(w._hoi_undo_stack)!=depth:
+  w_failures.append('Proposal applied after human review changed during confirmation')
 w._stop_autosave();w._mark_hoi_saved();w.close()
+assert not w_failures,w_failures
 print('BATCH_DIALOG_BIDIRECTIONAL_NAMESPACE_HUMAN_ANCHOR_ASSEMBLY_UNDO_STALE_PASS')

@@ -407,7 +407,6 @@ class YoloTrainWorker(QThread):
 
 
 class SemanticAdapterTrainWorker(QThread):
-    finished = pyqtSignal(bool, str, object)
     progress = pyqtSignal(str)
 
     def __init__(
@@ -428,6 +427,7 @@ class SemanticAdapterTrainWorker(QThread):
         self.noun_ids = [int(v) for v in list(noun_ids or [])]
         self.config = dict(config or {})
         self.init_model_path = str(init_model_path or "").strip()
+        self.result = (False, 'Semantic adapter training did not complete.', None)
 
     def run(self):
         try:
@@ -449,9 +449,9 @@ class SemanticAdapterTrainWorker(QThread):
                 min_samples=int(self.config.get("min_samples", 8) or 8),
                 init_package_path=self.init_model_path,
             )
-            self.finished.emit(bool(ok), str(msg), package)
+            self.result = (bool(ok), str(msg), package)
         except Exception as ex:
-            self.finished.emit(False, str(ex), None)
+            self.result = (False, str(ex), None)
 
 
 class YoloInferenceWorker(QThread):
@@ -11026,6 +11026,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._maybe_schedule_semantic_training()
 
     def _maybe_schedule_semantic_training(self) -> None:
+        if getattr(self, '_close_request_approved', False) or getattr(self, '_close_request_finalized', False):
+            return
         train_every = int(self._semantic_adapter_train_config.get("train_every", 6) or 6)
         min_samples = int(self._semantic_adapter_train_config.get("min_samples", 8) or 8)
         if self._semantic_feedback_pending < train_every:
@@ -11034,7 +11036,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return
         if len(self._semantic_verb_labels()) <= 0:
             return
-        if self._semantic_adapter_train_worker is not None and self._semantic_adapter_train_worker.isRunning():
+        if self._semantic_adapter_train_worker is not None:
             return
         feedback_rows = 0
         try:
@@ -11064,13 +11066,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             init_model_path=init_model_path,
             feedback_rows=int(feedback_rows),
         )
-        worker.finished.connect(self._on_semantic_training_finished)
+        # QThread.finished fires after run() returns, so the close guard and
+        # replacement worker cannot release a thread that is still executing.
+        worker.finished.connect(lambda: self._on_semantic_training_finished(*worker.result, worker=worker))
         self._semantic_adapter_train_worker = worker
         self._log_annotation_ready_state("hoi_semantic_training_started")
         worker.start()
 
-    def _on_semantic_training_finished(self, ok: bool, message: str, package: object) -> None:
-        worker = self.sender()
+    def _on_semantic_training_finished(self, ok: bool, message: str, package: object, worker=None) -> None:
+        worker = worker if worker is not None else self.sender()
         worker_model_path = ""
         if worker is not None:
             worker_model_path = str(getattr(worker, "model_path", "") or "").strip()
@@ -11084,6 +11088,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         )
         if worker_model_path and current_model_path and os.path.normcase(worker_model_path) != os.path.normcase(current_model_path):
             self._semantic_adapter_train_worker = None
+            if worker is not None:worker.deleteLater()
             return
         if ok and package is not None and self._semantic_adapter_matches_runtime(package):
             self.semantic_adapter_package = package
@@ -11099,6 +11104,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         refresh_focus=False,
                     )
         self._semantic_adapter_train_worker = None
+        if worker is not None:worker.deleteLater()
         self._log_annotation_ready_state("hoi_semantic_training_finished")
 
     def _semantic_review_recommended(
@@ -12866,11 +12872,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         ev = self._find_event_by_id(self.selected_event_id)
         if not ev:
             return
-        hand_data = ev.get("hoi_data", {}).get(self.selected_hand_label, {})
+        hand_data = self._selected_hand_data()
+        if hand_data is None:
+            hand_data = ev.get("hoi_data", {}).get(self.selected_hand_label, {})
         frame = hand_data.get(key)
         if frame is None:
             return
         try:
+            self._pause()
             self.player.seek(int(frame))
             current_frame = int(getattr(self.player, "current_frame", frame) or frame)
             self._refresh_boxes_for_frame(current_frame)
@@ -14327,6 +14336,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         end: int = None,
         frame: int = None,
         log_event: str = "hoi_load_video",
+        prepared_video=None,
     ) -> bool:
         target_path = str(path or "").strip()
         if not target_path:
@@ -14335,7 +14345,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         current_norm = self._normalized_video_path(self.video_path)
         reuse_loaded = bool(self.player.cap) and bool(current_norm) and current_norm == target_norm
         if not reuse_loaded:
-            if not self.player.load(target_path):
+            loaded = self.player.load(target_path, prepared_video=prepared_video) if prepared_video is not None else self.player.load(target_path)
+            if not loaded:
                 return False
 
         total_frames = int(getattr(self.player, "frame_count", 0) or 0)
@@ -14420,6 +14431,23 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if current_norm == target_norm and self._workspace_has_annotation_state():
             self._log("hoi_video_already_open_edits_retained", path=fp)
             return
+        prepared = None
+        try:
+            prepared = self.player.prepare_load(fp)
+            if prepared is None:
+                QMessageBox.warning(self, 'Video unavailable', 'Failed to decode video. The current project was retained.')
+                return False
+            return self._load_prepared_video(fp, resume_annotation, prepared)
+        except (OSError, ValueError, TypeError, cv2.error) as exc:
+            QMessageBox.warning(self, 'Video loading failed', str(exc))
+            return False
+        finally:
+            if prepared is not None and prepared.get('capture') is not None:
+                prepared['capture'].release()
+
+    def _load_prepared_video(self, fp, resume_annotation, prepared):
+        target_norm = self._normalized_video_path(fp)
+        current_norm = self._normalized_video_path(self.video_path)
         # Probe the destination lock before clearing the current workspace.
         from pathlib import Path
         from PyQt5.QtCore import QLockFile
@@ -14435,6 +14463,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if current_norm and target_norm and current_norm != target_norm and self._workspace_has_annotation_state():
             if not self._confirm_save_before_loading_video(fp):
                 return
+            # Flush the final draft under the old video's identity before switching locks.
+            self._finish_autosave()
+            self._autosave_tick()
+            self._finish_autosave()
             self._reserve_autosave(fp)
             self._reset_annotation_workspace_state(
                 reason="load_new_video_auto",
@@ -14449,7 +14481,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             }
         )
         QApplication.processEvents()
-        if not self._apply_video_session(fp, log_event="hoi_load_video"):
+        if not self._apply_video_session(fp, log_event="hoi_load_video", prepared_video=prepared):
             QMessageBox.warning(self, "Error", "Failed to load video.")
             self._log_annotation_ready_state("hoi_load_video_failed")
             return
@@ -17340,6 +17372,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             QMessageBox.critical(self, "Training Error", f"Training failed:\n{message}")
 
     def _confirm_close_request(self, prompt_parent=None) -> bool:
+        if any(worker is not None and worker.isRunning() for worker in
+               (getattr(self, '_semantic_adapter_train_worker', None), getattr(self, 'train_worker', None))):
+            QMessageBox.information(prompt_parent or self, 'Training running',
+                'Wait for the current background training to finish before closing the window.')
+            return False
         if bool(getattr(self, "_close_request_approved", False)):
             return True
         if (

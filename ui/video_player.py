@@ -130,20 +130,36 @@ class VideoPlayer(QLabel):
         self.main_window = None
 
     # ========== basic I/O ==========
-    def load(self, path: str) -> bool:
+    def prepare_load(self, path: str):
+        """Validate a decoder without changing the current video or playback."""
         orientation_ok, reason = check_ego_orientation(path)
         if not orientation_ok:
             QMessageBox.warning(self, "Ego orientation", reason)
-            return False
-        if self.cap:
-            self.cap.release()
-        self.cap = cv2.VideoCapture(path)
-        if not self.cap.isOpened():
-            self.cap = None
-            return False
+            return None
+        candidate = cv2.VideoCapture(path)
+        accepted = False
+        try:
+            if not candidate.isOpened():return None
+            frames = int(candidate.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = float(candidate.get(cv2.CAP_PROP_FPS) or 0.0)
+            ok, image = candidate.read()
+            if frames <= 0 or not ok or image is None:return None
+            candidate.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            accepted = True
+            return dict(capture=candidate, frames=frames, fps=fps)
+        except (cv2.error, ValueError, OverflowError):
+            return None
+        finally:
+            if not accepted:candidate.release()
 
-        self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
-        fps = float(self.cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    def load(self, path: str, prepared_video=None) -> bool:
+        prepared = prepared_video if prepared_video is not None else self.prepare_load(path)
+        if prepared is None:return False
+        self.pause()
+        if self.cap:self.cap.release()
+        self.cap = prepared.pop('capture')
+        self.frame_count = prepared['frames']
+        fps = prepared['fps']
         self.frame_rate = int(round(fps)) if fps > 0 else 30
         self.crop_start = 0
         self.crop_end = max(0, self.frame_count - 1)
