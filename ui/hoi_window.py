@@ -18987,16 +18987,45 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         )
         self.btn_play.setToolTip("Pause" if playing else "Play")
 
+    def _frame_display_relations(self, frame):
+        """Use the selected draft in its interval, otherwise the events at the playhead."""
+        if self.selected_event_id is None:
+            return []
+        def collect(hands, event_id, draft=False):
+            result=[]
+            for key,data in hands.items():
+                if not isinstance(data,dict):
+                    continue
+                start,end=data.get('interaction_start'),data.get('interaction_end')
+                if start is None or end is None or not start <= frame <= end:
+                    continue
+                result.append(dict(data,hand_id=key,event_id=event_id,_draft_preview=draft))
+            return result
+        focused=collect(getattr(self,'event_draft',{}) or {},self.selected_event_id,True)
+        if focused:
+            return focused
+        result=[]
+        for event in self.events:
+            if event.get('event_id') != self.selected_event_id:
+                result.extend(collect(event.get('hoi_data',{}),event.get('event_id')))
+        return result
+
     def _event_visible_object_ids(self, frame=None):
         """Only selected event entities may appear on the canvas; ID 0 is valid."""
         ids = set()
         if self.selected_event_id is None:
             return ids
+        f = self._assembly_frame() if frame is None else frame
+        relations = self._frame_display_relations(f)
         draft = getattr(self, "event_draft", {}) or {}
-        for data in draft.values():
+        # Keep incomplete drafts drawable while their boundaries are being entered.
+        if not relations and any((d.get('interaction_start') is None or d.get('interaction_end') is None)
+                                 and (self._hand_noun_object_id(d) is not None or self._hand_instrument_object_id(d) is not None)
+                                 for d in draft.values() if isinstance(d,dict)):
+            relations = [dict(d) for d in draft.values() if isinstance(d,dict)]
+        for data in relations:
             if not isinstance(data, dict):
                 continue
-            f = self._assembly_frame() if frame is None else frame
             for value in (resolve_object(data,self._assembly_data(),f), self._hand_instrument_object_id(data)):
                 if value is not None:
                     ids.add(str(value))
@@ -19367,35 +19396,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         hand_color = "#3b82f6"
         target_color = "#22c55e"
         instrument_color = "#f59e0b"
-        display_rels = []
-
-        # 1. Valid HOIs from committed events
-        for ev in self.events:
-            if ev.get("event_id") != self.selected_event_id:
-                continue
-            for actor in self.actors_config:
-                hand_key = actor["id"]
-                h_data = ev["hoi_data"][hand_key]
-                s = h_data.get("interaction_start")
-                e = h_data.get("interaction_end")
-
-                if s is not None and e is not None and s <= frame <= e:
-                    draw_item = dict(h_data)
-                    draw_item["hand_id"] = hand_key
-                    draw_item["event_id"] = ev.get("event_id")
-                    display_rels.append(draw_item)
-
-        # 2. Preview from current Draft
-        if hasattr(self, "event_draft"):
-            for actor in self.actors_config:
-                hand_key = actor["id"]
-                h_data = self.event_draft[hand_key]
-                if self.selected_event_id is not None and (self._hand_noun_object_id(h_data) is not None or self._hand_instrument_object_id(h_data) is not None):
-                    draw_item = dict(h_data)
-                    draw_item["hand_id"] = hand_key
-                    draw_item["event_id"] = self.selected_event_id
-                    draw_item["_draft_preview"] = True
-                    display_rels.append(draw_item)
+        display_rels = self._frame_display_relations(frame)
 
         overlay_data = []
         highlight_ids = {}
@@ -20301,12 +20302,17 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 explicit_id = new_box.get("object_id")
                 if explicit_id is None:
                     raw_label = str(new_box.get("label") or "").strip()
-                    id_match = re.match(r"^(?:\[(\d+)\]|(\d+))$", raw_label)
+                    id_match = re.match(r"^(?:\[(\d+)\](?:\s+.*)?|(\d+))$", raw_label)
                     if id_match:
                         explicit_id = int(id_match.group(1) or id_match.group(2))
                 if explicit_id is not None and self._object_name_for_id(explicit_id, default_for_none="", fallback=""):
                     obj_id = int(explicit_id)
-            # A manually entered class name creates a new instance by default.
+            if not is_hand_box and obj_id is None:
+                obj_id, accepted = self._choose_drawn_instance_id(label_txt)
+                if not accepted:
+                    return
+            if not is_hand_box and obj_id is not None:
+                label_txt = self._object_name_for_id(obj_id, fallback=label_txt)
 
             if target_orig is None:
                 try:
@@ -20416,6 +20422,31 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 label=label_txt,
                 frame=self.player.current_frame,
             )
+
+    def _choose_drawn_instance_id(self, label):
+        """Require an explicit choice before a class name creates another instance."""
+        category=self._norm_category(re.sub(r'_\d+$','',str(label or '')))
+        candidates=[]
+        for name,uid in self.global_object_map.items():
+            base=self.id_to_category.get(name,name)
+            if self._norm_category(re.sub(r'_\d+$','',base)) != category:
+                continue
+            if active_id(self._assembly_data(),uid,self._assembly_frame()) != uid:
+                continue
+            candidates.append((uid,name))
+        if not candidates:
+            return None, True
+        candidates.sort()
+        options=[f'Use existing [{uid}] {name}' for uid,name in candidates]
+        options.append(f'Create a new {category} instance')
+        choice,ok=QInputDialog.getItem(self,'Box instance',
+            'Which physical object does this box belong to?',options,0,False)
+        if not ok:
+            return None, False
+        for option,(uid,name) in zip(options,candidates):
+            if choice==option:
+                return uid, True
+        return None, True
 
     def _resolve_label_and_id(self, text: str):
         """

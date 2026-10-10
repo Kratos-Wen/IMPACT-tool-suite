@@ -7,7 +7,7 @@ from core.assembly_timeline import resolve_object,active_id,empty_timeline
 results=[]
 for name in ['']:
  p=root/name/'ui/hoi_window.py';tree=ast.parse(p.read_text(encoding='utf-8-sig'))
- wanted={'_on_box_edited','_event_visible_object_ids','_event_box_visible','_frame_boxes_with_cached_hands','_frame_hand_box'}
+ wanted={'_on_box_edited','_frame_display_relations','_event_visible_object_ids','_event_box_visible','_frame_boxes_with_cached_hands','_frame_hand_box'}
  methods=[n for c in tree.body if isinstance(c,ast.ClassDef) for n in c.body if isinstance(n,ast.FunctionDef) and n.name in wanted]
  for n in methods:
   n.returns=None
@@ -16,7 +16,7 @@ for name in ['']:
  mod=ast.fix_missing_locations(ast.Module(body=[cls],type_ignores=[]));ns={'re':re,'resolve_object':resolve_object,'active_id':active_id}
  exec(compile(mod,str(p),'exec'),ns);E=ns['Editor']
  def make():
-  e=E();e.selected_event_id=1;e.selected_hand_label='left_hand';e.start_offset=0
+  e=E();e.selected_event_id=1;e.selected_hand_label='left_hand';e.start_offset=0;e.events=[]
   e.event_draft={'left_hand':{'noun_object_id':2,'instrument_object_id':0},'right_hand':{}}
   e.player=types.SimpleNamespace(current_frame=10)
   e._assembly_data=empty_timeline;e._assembly_frame=lambda:10
@@ -31,6 +31,7 @@ for name in ['']:
   e._is_hand_label=lambda s:bool(e._normalize_hand_label(s))
   e._default_object_id_for_label=lambda s:1
   e._object_name_for_id=lambda i,**kw:'screw' if i in [0,1,2] else ''
+  e._choose_drawn_instance_id=lambda s:(None,True)
   e._selected_hand_data=lambda:e.event_draft['left_hand']
   for method in ['_push_undo','_rebuild_bboxes_from_raw','_bump_bbox_revision','_bump_query_state_revision','_refresh_boxes_for_frame','_sync_selected_hand_noun_after_box_relabel','_log','_register_object_entry','_assign_drawn_object_to_current_hand']:
    setattr(e,method,lambda *a,**kw:None)
