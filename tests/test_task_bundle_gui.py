@@ -65,5 +65,9 @@ with tempfile.TemporaryDirectory() as d:
  assert second['status']=='applied','An unrelated event must not invalidate tracking'
  assert next(b for b in w.raw_boxes if b['label']=='Left_hand')==old_boxes[0]
  assert any(b['id']==0 and b['label']=='part' and b['orig_frame']==1 for b in w.raw_boxes)
- w._mark_hoi_saved();w.close()
+ # This fixture deliberately has an incomplete event. Release its recovery
+ # lock explicitly before TemporaryDirectory removes files on Windows.
+ w._stop_tracking_tasks();w._stop_autosave();w.player.release_media()
+ assert not w._autosave_lock.isLocked()
+ w._mark_hoi_saved();w._close_request_approved=True;w.close()
  print('TASK_GUI_AUTOLOAD_TIMELINE_IDENTITY_AND_CORRECTION_NAMESPACE_PASS')
