@@ -7,6 +7,7 @@ from core.frame_review import signature,valid_record,missing_frames,box_observed
 from core.project_profile import PROFILE
 from core.anomaly_attributes import export_review
 from core.hoi_query_controller import get_field_state
+from ui.annotation_policy import onset_resolved
 from core.assembly_timeline import resolve_object,reference_id,change_frames,track_segments
 from core.correction_propagation import object_instance,protected
 
@@ -166,7 +167,10 @@ class FrameReviewMixin:
     def _accept_viewed_event_fields(self,hand):
         # Visiting the event's keyframes accepts displayed values without another checklist.
         # Keep the original machine states for traceability; never accept missing values.
-        frames={hand.get(f) for f in ('interaction_start','functional_contact_onset','interaction_end')}
+        frames={hand.get(f) for f in ('interaction_start','interaction_end')}
+        onset=hand.get('functional_contact_onset')
+        if type(onset) is int:frames.add(onset)
+        elif not onset_resolved(hand):return False
         if (any(type(f) is not int for f in frames) or not hand.get('verb') or
                 self._noun_required_for_verb(hand['verb']) and self._hand_noun_object_id(hand) is None or
                 self._policy_missing(hand) or

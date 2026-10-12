@@ -73,6 +73,19 @@ assert w.event_draft['Left_hand']['_event_extra']['source_field_states']['verb']
 assert not w._hand_completion_state(w.events[0]['hoi_data']['Left_hand'],'Left_hand')['suggested_fields']
 segments=w._hoi_segments_for_hand('Left_hand')
 assert segments[0]['complete'] and segments[0]['color'].name()==w._hoi_color_for_verb('insert').name()
+# An explicit no-contact decision needs only the two observable endpoint frames.
+hand=w.event_draft['Left_hand']
+for field in ('interaction_start','interaction_end','verb','noun_object_id'):
+    w._set_hand_field_state(hand,field,source='machine_candidate',status='suggested')
+with patch('ui.annotation_policy.QInputDialog.getItem',return_value=('No contact occurred',True)),patch('ui.annotation_policy.QInputDialog.getText',return_value=('The attempt ends before contact',True)):
+    w._record_contact_exception()
+w._schedule_box_observation()
+wait_until(lambda:not w._hand_completion_state(w.event_draft['Left_hand'],'Left_hand')['suggested_fields'])
+assert w.event_draft['Left_hand']['functional_contact_onset'] is None
+assert w._hand_completion_state(w.event_draft['Left_hand'],'Left_hand')['complete']
+w._clear_contact_exception()
+w._set_hand_field_state(w.event_draft['Left_hand'],'functional_contact_onset',value=7,source='manual',status='confirmed')
+w._apply_draft_to_selected_event()
 # Multiple anomaly types share a keyframe without separate reviewer switches.
 w.combo_anomaly.toggle('attribute_a');w.combo_anomaly.toggle('attribute_b')
 w.player.seek(5);w._refresh_boxes_for_frame(5,lightweight=True);w.btn_anomaly_keyframe.click()

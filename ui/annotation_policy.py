@@ -25,7 +25,7 @@ class AnnotationPolicyMixin:
         if not ok:return
         reason,ok=QInputDialog.getText(self,'Contact','Evidence / reason:')
         if not ok or not reason.strip():return
-        self._push_undo();hand['functional_contact_onset']=None
+        self._push_undo();self._set_hand_field_state(hand,'functional_contact_onset',value=None,source='manual_contact_decision',status='confirmed')
         hand.setdefault('_event_extra',{}).update(onset_review_state='unknown' if choice=='Not observable' else 'no_contact',onset_reason=reason.strip())
         self._apply_draft_to_selected_event();self._load_hand_draft_to_ui(self.selected_hand_label);self._update_status_label()
 
