@@ -1,5 +1,9 @@
 # IMPACT tool suite
 
+[![Desktop](https://github.com/Kratos-Wen/IMPACT-tool-suite/actions/workflows/desktop.yml/badge.svg?branch=main)](https://github.com/Kratos-Wen/IMPACT-tool-suite/actions/workflows/desktop.yml)
+[![Audio](https://github.com/Kratos-Wen/IMPACT-tool-suite/actions/workflows/audio-review.yml/badge.svg?branch=main)](https://github.com/Kratos-Wen/IMPACT-tool-suite/actions/workflows/audio-review.yml)
+[![SAM CPU](https://github.com/Kratos-Wen/IMPACT-tool-suite/actions/workflows/sam-cpu.yml/badge.svg?branch=main)](https://github.com/Kratos-Wen/IMPACT-tool-suite/actions/workflows/sam-cpu.yml)
+
 A single desktop application for editing hand–object interaction annotations and testing optional SAM2 correction propagation. The English interface is retained.
 
 The separate [offline audio review utility](audio_review/README.md) opens in a browser. It does not require the desktop application's dependencies.

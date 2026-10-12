@@ -1,5 +1,19 @@
 name: Offline audio review
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'audio_review/**'
+      - 'tests/test_audio_review_browser.py'
+      - '.github/workflows/audio-review.yml'
+  pull_request:
+    paths:
+      - 'audio_review/**'
+      - 'tests/test_audio_review_browser.py'
+      - '.github/workflows/audio-review.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

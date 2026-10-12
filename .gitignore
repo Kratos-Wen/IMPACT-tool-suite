@@ -1,4 +1,6 @@
 __pycache__/
+.DS_Store
+Thumbs.db
 *.py[cod]
 .venv*/
 runtime_artifacts/

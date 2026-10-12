@@ -149,9 +149,3 @@ if __name__ == "__main__":
         w.setWindowIcon(QIcon(icon_path))
     w.show()
     sys.exit(app.exec_())
-
-
-# Subtitle conversion feature is not implemented
-# Bbox Genera1tor feature is not implemented
-# Segmantaion Assistant feature is not implemented
-# Interactive Segmentation feature is not implemented

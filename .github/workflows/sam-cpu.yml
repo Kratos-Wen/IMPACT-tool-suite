@@ -1,5 +1,25 @@
 name: SAM CPU portability
-on: [push, workflow_dispatch]
+on:
+  push:
+    paths:
+      - 'core/**'
+      - 'tools/**'
+      - 'utils/ego_orientation_guard.py'
+      - 'tests/test_sam_cpu_backend.py'
+      - 'requirements*.txt'
+      - '.github/workflows/sam-cpu.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'tools/**'
+      - 'utils/ego_orientation_guard.py'
+      - 'tests/test_sam_cpu_backend.py'
+      - 'requirements*.txt'
+      - '.github/workflows/sam-cpu.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
