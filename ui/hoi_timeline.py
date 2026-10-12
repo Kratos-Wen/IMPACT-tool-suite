@@ -9,6 +9,8 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QSlider,
     QFrame,
+    QApplication,
+    QToolTip,
 )
 from ui.timeline import BaseTimelineRow
 from utils.constants import DEFAULT_VIEW_SPAN
@@ -35,6 +37,8 @@ class HOITimelineRow(BaseTimelineRow):
         get_fps: Callable[[], int],
         get_gutter: Callable[[], int],
         parent=None,
+        get_box_markers=None,
+        on_box_marker=None,
     ):
         super().__init__(
             get_frame_count, get_view_start, get_view_span, get_fps, get_gutter, parent
@@ -66,6 +70,12 @@ class HOITimelineRow(BaseTimelineRow):
         self._preview_onset: Optional[int] = None
         self._create_anchor: Optional[int] = None
         self._grab_offset = 0
+        self._pending_box_jump = None
+        self._on_box_marker = on_box_marker
+        self._box_markers = None
+        if get_box_markers is not None and on_box_marker is not None:
+            from ui.event_box_markers import EventBoxMarkers
+            self._box_markers = EventBoxMarkers(self, get_box_markers)
 
     def sizeHint(self) -> QSize:
         return QSize(900, 48)
@@ -169,6 +179,16 @@ class HOITimelineRow(BaseTimelineRow):
                 return True
         return False
 
+    def _selected_segment(self):
+        if self._selected_event_id is None:
+            return None
+        return next((seg for seg in self._segments()
+                     if seg['event_id'] == self._selected_event_id), None)
+
+    def _hit_box_marker(self, x, y):
+        segment = self._selected_segment() if self._box_markers else None
+        return self._box_markers.hit(segment, x, y) if segment else None
+
     def paintEvent(self, _e):
         p = QPainter(self)
         row_selected = self._selected_event_id is not None
@@ -212,6 +232,13 @@ class HOITimelineRow(BaseTimelineRow):
                 p.setBrush(Qt.NoBrush)
                 p.setPen(QPen(accent, 1))
                 p.drawRoundedRect(rect.adjusted(3, 3, -3, -3), 3, 3)
+
+            if sel and self._box_markers and not self._dragging:
+                # Coalesce dense tracks to one thin tick per screen pixel.
+                # Draw below the onset arrow and before text; retain action colours.
+                for x, group in self._box_markers.layout(seg).items():
+                    p.setPen(QPen(QColor('#f59e0b' if group['conflict'] else '#facc15'), 1))
+                    p.drawLine(x, rect.top() + 12, x, rect.bottom() - 3)
 
             if seg.get("verb"):
                 p.setPen(QPen(QColor("#101828") if sel else QColor("#344054")))
@@ -265,6 +292,14 @@ class HOITimelineRow(BaseTimelineRow):
         p.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
 
     def mouseMoveEvent(self, e):
+        if self._pending_box_jump:
+            pending = self._pending_box_jump
+            if (e.pos() - pending['position']).manhattanLength() < QApplication.startDragDistance():
+                return
+            self._pending_box_jump = None
+            self._begin_segment_drag(pending['segment'], pending['where'],
+                                     self.x_to_frame(pending['position'].x()))
+            QToolTip.hideText()
         g = self.get_gutter()
         if not self._dragging and e.x() < g:
             self._hover_frame = None
@@ -277,6 +312,13 @@ class HOITimelineRow(BaseTimelineRow):
         self._on_hover(f)
 
         if not self._dragging:
+            marker = self._hit_box_marker(e.x(), e.y())
+            if marker:
+                self.setCursor(Qt.PointingHandCursor)
+                QToolTip.showText(e.globalPos(), marker['tooltip'], self)
+                self.update()
+                return
+            QToolTip.hideText()
             seg, where = self._hit_segment(e.x(), e.y())
             if where in ("left", "right"):
                 self.setCursor(Qt.SizeHorCursor)
@@ -340,12 +382,25 @@ class HOITimelineRow(BaseTimelineRow):
         self.update()
 
     def leaveEvent(self, e):
+        QToolTip.hideText()
         if not self._dragging and self._hover_frame is not None:
             self._hover_frame = None
             self._on_hover(-1)
             self.setCursor(Qt.ArrowCursor)
             self.update()
         super().leaveEvent(e)
+
+    def _begin_segment_drag(self, seg, where, frame):
+        self._dragging = True
+        self._active_event_id = seg.get('event_id')
+        self._active_interval = (seg['start'], seg['end'])
+        self._active_onset = seg.get('onset')
+        self._mode = {'left': 'resize_left', 'right': 'resize_right',
+                      'onset': 'move_onset'}.get(where, 'move')
+        if self._mode == 'move':
+            self._grab_offset = frame - seg['start']
+        self._preview_interval = self._active_interval
+        self._preview_onset = self._active_onset
 
     def mousePressEvent(self, e):
         if e.button() == Qt.RightButton:
@@ -358,25 +413,16 @@ class HOITimelineRow(BaseTimelineRow):
         g = self.get_gutter()
         if e.x() < g:
             return
+        marker = self._hit_box_marker(e.x(), e.y())
         seg, where = self._hit_segment(e.x(), e.y())
         f = self.x_to_frame(e.x())
         if seg:
             self._on_select(seg.get("event_id"), self.hand_key)
-            self._dragging = True
-            self._active_event_id = seg.get("event_id")
-            self._active_interval = (seg["start"], seg["end"])
-            self._active_onset = seg.get("onset")
-            if where == "left":
-                self._mode = "resize_left"
-            elif where == "right":
-                self._mode = "resize_right"
-            elif where == "onset":
-                self._mode = "move_onset"
-            else:
-                self._mode = "move"
-                self._grab_offset = f - seg["start"]
-            self._preview_interval = self._active_interval
-            self._preview_onset = self._active_onset
+            if marker:
+                self._pending_box_jump = dict(marker, position=e.pos(), segment=seg, where=where)
+                e.accept()
+                return
+            self._begin_segment_drag(seg, where, f)
             self.update()
             return
 
@@ -391,6 +437,14 @@ class HOITimelineRow(BaseTimelineRow):
         self.update()
 
     def mouseReleaseEvent(self, _e):
+        if _e.button() != Qt.LeftButton:
+            return
+        if self._pending_box_jump:
+            pending = self._pending_box_jump
+            self._pending_box_jump = None
+            self._on_box_marker(pending['frame'])
+            _e.accept()
+            return
         if not self._dragging:
             return
         if self._mode == "create" and self._preview_interval:
@@ -422,6 +476,12 @@ class HOITimelineRow(BaseTimelineRow):
             super().mouseDoubleClickEvent(e)
             return
         if e.x() < self.get_gutter():
+            return
+        marker = self._hit_box_marker(e.x(), e.y())
+        if marker:
+            self._pending_box_jump = None
+            self._on_box_marker(marker['frame'])
+            e.accept()
             return
         seg, _where = self._hit_segment(e.x(), e.y())
         if not seg:
@@ -476,6 +536,8 @@ class HOITimeline(QWidget):
         self._user_span_override = False
         self._selected_event_id: Optional[int] = None
         self._selected_hand: Optional[str] = None
+        self._get_box_markers = get_box_markers
+        self._on_box_marker = on_box_marker
         
         self.actors_config = actors_config or [
             {"id": "Left_hand", "short": "L"},
@@ -497,19 +559,12 @@ class HOITimeline(QWidget):
         self._build_rows()
         
         layout.addWidget(self.rows_frame)
-        self.box_strip=None
-        if get_box_markers is not None and on_box_marker is not None:
-            from ui.bbox_frame_strip import BBoxFrameStrip
-            self.box_strip=BBoxFrameStrip(self,get_box_markers,on_box_marker)
-            layout.addWidget(self.box_strip)
-            legend=QLabel('Boxes: blue = drawn/edited · green = viewed · gray = model · amber = conflict')
-            legend.setStyleSheet('color: #64748b;');layout.addWidget(legend)
 
         controls = QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(6)
         self.lbl_timeline_caption = QLabel("Timeline")
-        self.rows_frame.setToolTip('Ctrl/Command + wheel: zoom at pointer. Shift + wheel: pan. Alt+1/2/3: Start/Onset/End. Alt+Left/Right: previous/next keyframe.')
+        self.rows_frame.setToolTip('Yellow lines inside the selected event: frames with boxes; orange: duplicate/invalid boxes. Click a line to jump. Drag SOE handles at the top of the event. Alt+, / Alt+.: previous/next box frame. Ctrl/Command + wheel: zoom; Shift + wheel: pan. Alt+1/2/3: Start/Onset/End. Alt+Left/Right: previous/next keyframe.')
         self.lbl_timeline_caption.setStyleSheet("color: #344054; font-weight: 600;")
         controls.addWidget(self.lbl_timeline_caption, 0)
         lbl_start = QLabel("Start")
@@ -567,6 +622,8 @@ class HOITimeline(QWidget):
                 self._get_fps,
                 self.get_gutter,
                 self,
+                get_box_markers=self._get_box_markers,
+                on_box_marker=self._on_box_marker,
             )
             self.actor_rows[aid] = row
             self.rows_layout.addWidget(row)
@@ -585,12 +642,11 @@ class HOITimeline(QWidget):
         self._user_span_override=True
         self._init_sliders()
         for row in self.actor_rows.values():row.update()
-        if self.box_strip:self.box_strip.update()
 
     def _wheel_navigation(self,event,row=None):
         modifiers=event.modifiers()
         if not modifiers & (Qt.ControlModifier|Qt.MetaModifier|Qt.ShiftModifier):return False
-        if any(r._dragging for r in self.actor_rows.values()):
+        if any(r._dragging or r._pending_box_jump for r in self.actor_rows.values()):
             event.accept();return True
         delta=event.angleDelta().y() or event.angleDelta().x()
         if not delta:delta=event.pixelDelta().y() or event.pixelDelta().x()
@@ -712,14 +768,12 @@ class HOITimeline(QWidget):
         self.slider_view.blockSignals(False)
         for row in self.actor_rows.values():
             row.update()
-        if self.box_strip:self.box_strip.update()
         self._update_view_summary()
 
     def _on_view_start_changed(self, v: int):
         self._view_start = int(v)
         for row in self.actor_rows.values():
             row.update()
-        if self.box_strip:self.box_strip.update()
         self._update_view_summary()
 
     def _on_view_span_changed(self, val: int):
@@ -753,16 +807,13 @@ class HOITimeline(QWidget):
         self._selected_hand = hand_key
         for aid, row in self.actor_rows.items():
             row.set_selected(event_id if hand_key == aid else None)
-        if self.box_strip:self.box_strip.update()
 
     def set_current_frame(self, frame: int, follow: bool = True):
         if follow:
             self._ensure_visible(frame)
         for row in self.actor_rows.values():
             row.set_current_frame(frame)
-        if self.box_strip:self.box_strip.set_current_frame(frame)
 
     def refresh(self):
         for row in self.actor_rows.values():
             row.update()
-        if self.box_strip:self.box_strip.update()
