@@ -70,6 +70,8 @@
     const value = bounds(mode);
     if (!validClip(value)) { $('validation').textContent = L.invalidTime; return; }
     clip = value; activeMode = mode;
+    $('seek').max = value.end - value.start; $('seek').value = 0;
+    $('elapsed').textContent = format(0); $('clip-duration').textContent = format(value.end - value.start);
     $('play-mode').textContent = mode === 'original' ? L.original : mode === 'context' ? L.context : L.current;
     const url = new URL(value.path, window.location.href).href;
     const base = player.src.split('#')[0];
