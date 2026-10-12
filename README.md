@@ -2,6 +2,8 @@
 
 A single desktop application for editing hand–object interaction annotations and testing optional SAM2 correction propagation. The English interface is retained.
 
+The separate [offline audio review utility](audio_review/README.md) opens in a browser. It does not require the desktop application's dependencies.
+
 ## Installation
 
 See the [installation guide](docs/INSTALL_en.md) or [中文说明](docs/INSTALL_zh.md). Run from the repository root.

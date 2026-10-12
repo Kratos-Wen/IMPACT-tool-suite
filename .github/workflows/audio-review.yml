@@ -1,0 +1,29 @@
+name: Offline audio review
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            browser: firefox
+          - os: ubuntu-latest
+            browser: chrome
+          - os: windows-latest
+            browser: chrome
+          - os: macos-latest
+            browser: chrome
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install selenium
+      - run: python -m unittest discover -s tests -p test_audio_review_browser.py -v
+        env:
+          IMPACT_AUDIO_BROWSER: ${{ matrix.browser }}

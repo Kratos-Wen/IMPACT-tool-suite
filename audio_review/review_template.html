@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="__UI_LANGUAGE__">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>IMPACT Audio Review</title><style>__STYLE__</style></head>
+<body>
+<header><strong>IMPACT Audio Review</strong><span id="progress" aria-live="polite"></span>
+<label class="sr-only" for="reviewer">Reviewer</label><input id="reviewer" data-ph="reviewer" autocomplete="name">
+<button id="import" data-t="import"></button><input id="import-file" type="file" accept=".json,application/json" hidden>
+<button id="export" data-t="export"></button><span id="saved" role="status"></span></header>
+<main>
+<section class="navigation"><select id="recording" aria-label="Recording"></select>
+<input id="search" type="search" data-ph="search"><select id="filter" aria-label="Review filter">
+<option value="all" data-t="all"></option><option value="pending" data-t="pending"></option></select>
+<button id="help" data-t="help"></button></section>
+<section class="player-panel"><div class="player-buttons">
+<button id="play" class="primary" data-t="play"></button><button id="original" data-t="original"></button>
+<button id="context" data-t="context"></button><label><span data-t="speed"></span>
+<select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
+<span id="play-mode"></span></div>
+<div class="seek-row"><span id="elapsed">0:00</span><input id="seek" type="range" min="0" max="1" value="0" step="0.001" aria-label="Utterance position"><span id="clip-duration">0:00</span></div>
+<div id="audio-status" role="status"></div><audio id="player" preload="metadata"></audio></section>
+<section class="utterance"><div class="utterance-heading"><strong id="position"></strong><span id="state"></span>
+<button id="evidence" data-t="evidence"></button></div>
+<div class="times"><label><span data-t="start"></span><input id="start" type="number" min="0" step="0.001"></label>
+<button id="set-start" data-t="setStart"></button><label><span data-t="end"></span><input id="end" type="number" min="0" step="0.001"></label>
+<button id="set-end" data-t="setEnd"></button><span data-t="seconds"></span></div>
+<label class="text-label" for="text" data-t="text"></label><textarea id="text" spellcheck="false"></textarea>
+<div class="checks"><label><input id="text-ok" type="checkbox"><span data-t="textOk"></span></label>
+<label><input id="time-ok" type="checkbox"><span data-t="timeOk"></span></label>
+<label class="exclude"><input id="excluded" type="checkbox"><span data-t="exclude"></span></label></div>
+<label class="notes"><span data-t="notes"></span><input id="notes" type="text"></label>
+<div id="validation" role="alert"></div></section>
+<footer><button id="previous" data-t="previous"></button><button id="next" data-t="next"></button>
+<button id="accept" class="primary" data-t="accept"></button><span data-t="keys"></span></footer>
+</main>
+<dialog id="details"><div class="dialog-head"><strong id="details-title"></strong><button id="close-details" data-t="close"></button></div><div id="details-body"></div></dialog>
+<script>const DATA=__DATA__,L=__LABELS__;
+__CORE__
+__APP__
+</script></body></html>
