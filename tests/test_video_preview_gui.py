@@ -50,8 +50,10 @@ heartbeat.start()
 start=time.monotonic();p.request_preview(70,ready)
 assert time.monotonic()-start<.2
 wait_until(entered.is_set)
-QTest.qWait(80)
-assert len(ticks)>=4 and p.current_frame==p._displayed_frame==0
+# Timer scheduling differs across desktop platforms. Keep decoding blocked
+# until Qt has processed four heartbeats instead of assuming an 80 ms cadence.
+wait_until(lambda:len(ticks)>=4, milliseconds=1500)
+assert p.current_frame==p._displayed_frame==0
 for frame in range(71,91):p.request_preview(frame,ready)
 assert len(calls)==1,'Intermediate preview requests were queued'
 gate.set();wait_until(lambda:p._displayed_frame==90)
