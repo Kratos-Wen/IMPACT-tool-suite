@@ -60,15 +60,15 @@ def render_page(data, ui_language=None):
         raise ValueError('Unsupported interface language')
     labels = dict(LABELS[ui_language], uiLanguage=ui_language)
     replacements = {
-        '__UI_LANGUAGE__': ui_language, '__STYLE__': (ROOT / 'review.css').read_text(),
+        '__UI_LANGUAGE__': ui_language, '__STYLE__': (ROOT / 'review.css').read_text(encoding='utf-8'),
         '__DATA__': _script_json(data), '__LABELS__': _script_json(labels),
-        '__CORE__': (ROOT / 'review_core.js').read_text(), '__APP__': (ROOT / 'review_app.js').read_text(),
+        '__CORE__': (ROOT / 'review_core.js').read_text(encoding='utf-8'), '__APP__': (ROOT / 'review_app.js').read_text(encoding='utf-8'),
     }
     # A single replacement pass prevents transcript text resembling a placeholder
     # from being treated as part of the template.
     import re
     return re.sub('|'.join(map(re.escape, replacements)), lambda m: replacements[m[0]],
-                  (ROOT / 'review_template.html').read_text())
+                  (ROOT / 'review_template.html').read_text(encoding='utf-8'))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
@@ -76,4 +76,4 @@ if __name__ == '__main__':
     parser.add_argument('output', type=Path)
     parser.add_argument('--ui-language', choices=sorted(LABELS))
     args = parser.parse_args()
-    args.output.write_text(render_page(json.loads(args.data.read_text()), args.ui_language), encoding='utf-8')
+    args.output.write_text(render_page(json.loads(args.data.read_text(encoding='utf-8')), args.ui_language), encoding='utf-8')

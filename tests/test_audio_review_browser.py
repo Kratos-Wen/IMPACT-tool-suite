@@ -224,7 +224,7 @@ class AudioReviewBrowserTests(unittest.TestCase):
         data['plan_hash'] = 'escaped-transcript-rendering'
         data['items'][0]['original_text'] = '</script><img src=x onerror=alert(1)> __CORE__'
         path = self.folder / 'escaped.html'
-        path.write_text(renderer.render_page(data, 'en'))
+        path.write_text(renderer.render_page(data, 'en'), encoding='utf-8')
         self.browser.get(path.as_uri())
         self.assertEqual(self.browser.find_element(By.ID, 'text').get_attribute('value'), data['items'][0]['original_text'])
         self.assertEqual(self.js('return document.querySelectorAll("img").length'), 0)
