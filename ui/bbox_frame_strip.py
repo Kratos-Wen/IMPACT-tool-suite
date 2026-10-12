@@ -1,6 +1,6 @@
 """Three thin role lanes, sharing the event timeline's exact coordinate transform."""
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPainter,QColor,QPen
+from PyQt5.QtCore import Qt,QEvent
+from PyQt5.QtGui import QPainter,QColor,QPen,QFontMetrics
 from PyQt5.QtWidgets import QToolTip
 from ui.timeline import BaseTimelineRow
 from core.bbox_markers import COLORS,PRIORITY,CAPTIONS
@@ -9,8 +9,14 @@ class BBoxFrameStrip(BaseTimelineRow):
     def __init__(self,timeline,get_markers,on_jump):
         super().__init__(timeline._get_fc,timeline.get_view_start,timeline.get_view_span,timeline._get_fps,timeline.get_gutter,timeline)
         self.timeline=timeline;self.get_markers=get_markers;self.on_jump=on_jump
-        self.lane_height=18;self.setFixedHeight(3*self.lane_height);self.setMouseTracking(True);self._layout_key=None;self._groups={}
+        self.lane_height=max(18,QFontMetrics(self.font()).height()+4);self.setFixedHeight(3*self.lane_height);self.setMouseTracking(True);self._layout_key=None;self._groups={}
         self.setToolTip('H: hand · O: object · I: instrument. Click a tick to jump to its exact frame. Blue: drawn/edited · green: viewed · gray: model · amber: conflict. Ctrl/Command+wheel zooms; Shift+wheel pans.')
+
+    def changeEvent(self,event):
+        super().changeEvent(event)
+        if event.type()==QEvent.FontChange and hasattr(self,'lane_height'):
+            self.lane_height=max(18,QFontMetrics(self.font()).height()+4)
+            self.setFixedHeight(3*self.lane_height);self.update()
 
     def _layout(self):
         markers=self.get_markers() or [];start=self.get_vs();end=start+self.get_span()
@@ -28,13 +34,15 @@ class BBoxFrameStrip(BaseTimelineRow):
     def paintEvent(self,event):
         painter=QPainter(self);painter.fillRect(self.rect(),QColor('#f8fafc'))
         painter.setFont(self.font())
+        metrics=QFontMetrics(self.font())
         for lane,role in enumerate(('H','O','I')):
             y=lane*self.lane_height
-            painter.setPen(QColor('#64748b'));painter.drawText(5,y+14,role)
-            painter.setPen(QColor('#e2e8f0'));painter.drawLine(self.get_gutter(),y+14,self.width(),y+14)
+            painter.setPen(QColor('#64748b'));painter.drawText(5,y+(self.lane_height-metrics.height())//2+metrics.ascent(),role)
+            painter.setPen(QColor('#e2e8f0'));painter.drawLine(self.get_gutter(),y+self.lane_height//2+4,self.width(),y+self.lane_height//2+4)
         for (x,lane),row in self._layout().items():
             painter.setPen(QPen(QColor(COLORS[row['state']]),2 if row['state']!='model' else 1))
-            painter.drawLine(x,lane*self.lane_height+4,x,lane*self.lane_height+12)
+            center=lane*self.lane_height+self.lane_height//2
+            painter.drawLine(x,center-4,x,center+4)
         if self.current_frame is not None:
             painter.setPen(QPen(QColor('#111827'),1));x=self.frame_to_x(self.current_frame)
             painter.drawLine(x,0,x,self.height()-1)

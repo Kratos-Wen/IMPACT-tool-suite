@@ -8,6 +8,7 @@ from app import _bootstrap_qt_runtime
 _bootstrap_qt_runtime()
 import numpy as np
 from PyQt5.QtCore import Qt,QPoint
+from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import QApplication,QMessageBox
 from PyQt5.QtTest import QTest
 from core.project_profile import PROFILE
@@ -46,6 +47,9 @@ rows=w._boxes_for_review('O:'+str(uid),20)
 w.frame_review={'20':{'O:'+str(uid):dict(state='verified',signature=signature(rows))}};w._bump_query_state_revision()
 assert any(m['role']=='O' and m['frame']==20 and m['state']=='viewed' for m in w._bbox_frame_markers())
 strip=w.hoi_timeline.box_strip;strip.resize(900,strip.height());w.hoi_timeline._set_view(0,100)
+original_font=strip.font();large_font=strip.font();large_font.setPointSize(24);strip.setFont(large_font)
+assert strip.lane_height>=QFontMetrics(large_font).height()+4 and strip.height()==3*strip.lane_height
+strip.setFont(original_font)
 # Slider changes must repaint the strip along with the event rows.
 with patch.object(strip,'update') as repaint:
     w.hoi_timeline._on_view_start_changed(5);assert repaint.called
