@@ -219,6 +219,15 @@ class AudioReviewBrowserTests(unittest.TestCase):
         self.js('document.dispatchEvent(new KeyboardEvent("keydown",{key:"ArrowLeft",altKey:true,bubbles:true}));')
         self.assertIn('u0', self.browser.find_element(By.ID, 'position').text)
 
+    def test_space_plays_when_approval_button_has_focus_without_approving(self):
+        from selenium.webdriver.common.keys import Keys
+        button = self.browser.find_element(By.ID, 'accept')
+        self.js('document.getElementById("accept").focus()')
+        button.send_keys(Keys.SPACE)
+        self.wait.until(lambda driver: self.js('return document.getElementById("player").src.includes("one.wav")'))
+        self.assertEqual(self.exported()['items'], [])
+        self.assertIn('u0', self.browser.find_element(By.ID, 'position').text)
+
     def test_renderer_does_not_replace_or_execute_transcript_content(self):
         data = json.loads(json.dumps(self.data))
         data['plan_hash'] = 'escaped-transcript-rendering'

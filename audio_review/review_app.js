@@ -253,7 +253,7 @@
     if ($('details').open) return;
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); approve(); return; }
     if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) { event.preventDefault(); navigate(event.key === 'ArrowLeft' ? -1 : 1); return; }
-    if (event.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(event.target.tagName)) { event.preventDefault(); $('play').click(); }
+    if (event.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName)) { event.preventDefault(); $('play').click(); }
   });
   window.addEventListener('beforeunload', persist);
   // Small read API for integrations; edits continue through the review controls.
