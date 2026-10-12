@@ -90,8 +90,6 @@ class AnnotationPolicyMixin:
         model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         review=export_review(hand.get('anomaly_label'),PROFILE)
-        if review['anomaly_review_state'] not in ('reviewed','partial'):missing.append('anomaly review')
-        if review['anomaly_review_state']=='partial':missing.append('unknown attributes')
         if review['anomaly_labels']:
             evidence=hand.get('_event_extra',{}).get('anomaly_evidence',{})
             for label in review['anomaly_labels']:
@@ -102,7 +100,7 @@ class AnnotationPolicyMixin:
             s=hand.get('interaction_start');e=hand.get('interaction_end')
             if type(s) is int and type(e) is int:
                 uid=reference_id(hand,self._assembly_data(),s)
-                times=[s]+change_frames(self._assembly_data(),uid,s,e) if uid is not None else [s]
+                times=[s]+[f for f in change_frames(self._assembly_data(),uid,s,e) if f<e] if uid is not None else [s]
                 states=[state_at(self._assembly_data(),f,uid) if uid is not None else None for f in times]
                 if any(not x or x.get('composition_review_state','reviewed')!='reviewed' for x in states):missing.append('assembly composition')
                 if any(x and forbidden.intersection(x.get('components',[])) for x in states):missing.append('model-incompatible composition')
@@ -123,4 +121,16 @@ class AnnotationPolicyMixin:
                     issues.append({'event_id':event['event_id'],'hand':hand,'frame':data.get('interaction_start') or 0,
                                    'field':'verb' if name=='replace legacy verb' else 'instrument_object_id' if name=='identify instrument category' else 'anomaly_label' if name.startswith(('anomaly','unknown')) else 'noun_object_id',
                                    'code':name.replace(' ','_'),'missing':[name]})
+        from core.event_intervals import interiors_overlap
+        for index,event in enumerate(self.events):
+            for key,hand in event.get('hoi_data',{}).items():
+                s=hand.get('interaction_start');e=hand.get('interaction_end')
+                if not hand.get('verb') or type(s) is not int or type(e) is not int:continue
+                for other in self.events[:index]:
+                    row=other.get('hoi_data',{}).get(key,{})
+                    a=row.get('interaction_start');b=row.get('interaction_end')
+                    if row.get('verb') and type(a) is int and type(b) is int and interiors_overlap(s,e,a,b):
+                        issues.append(dict(event_id=event['event_id'],hand=key,frame=max(s,a),
+                                           field='interaction_start',code='overlapping_events',
+                                           missing=['Adjust overlapping event boundaries']))
         return issues

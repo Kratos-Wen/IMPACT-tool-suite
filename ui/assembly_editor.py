@@ -2,7 +2,7 @@
 from copy import deepcopy
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QDialog,QVBoxLayout,QLabel,QSpinBox,QComboBox,QListWidget,
-    QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox)
+    QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox,QPushButton,QHBoxLayout)
 from core.assembly_timeline import (state_at,put_state,noun_at,validate_timeline,empty_timeline,
     reference_id,resolve_object,active_id,active_object_ids,merge_instances)
 from core.project_profile import PROFILE
@@ -156,7 +156,10 @@ class AssemblyEditorMixin:
             if part:promotions[uid]=part
         hand_uid=reference_id(self.event_draft.get(self.selected_hand_label,{}),data,frame.value())
         selected=hand_uid if objects.findData(hand_uid)>0 else self._assembly_selected_id()
-        objects.setCurrentIndex(max(0,objects.findData(selected)));layout.addWidget(objects)
+        objects.setCurrentIndex(max(0,objects.findData(selected)))
+        instance_row=QHBoxLayout();instance_row.addWidget(objects,1)
+        create=QPushButton('New assembly');create.setObjectName('newAssemblyInstance')
+        create.clicked.connect(lambda:objects.setCurrentIndex(0));instance_row.addWidget(create);layout.addLayout(instance_row)
         status=QLabel();layout.addWidget(status)
         layout.addWidget(QLabel('Check all components currently connected in this instance. Multiple selections are allowed.'))
         names=set(PROFILE.get('assembly_components',[]))|{x for s in data.get('states',[]) for x in s['components']};names.discard('assembly')

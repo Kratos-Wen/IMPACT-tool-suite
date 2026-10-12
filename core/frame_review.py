@@ -12,17 +12,27 @@ def valid_record(record,boxes):
                     (record.get('state')=='not_visible' and not boxes)))
     except (ValueError,TypeError,KeyError):return False
 
-def missing_frames(start,end,onset,reviewed,fps,rate=2,extra=()):
-    if start>end or fps<=0 or rate<=0:raise ValueError('Invalid interval or rate')
-    step=max(1,int(math.floor(fps/rate)))
+def missing_frames(start,end,onset,reviewed,fps,rate=None,extra=()):
+    if start>end or fps<=0 or rate is not None and rate<=0:raise ValueError('Invalid interval or rate')
     valid=sorted({f for f in reviewed if start<=f<=end})
     required={start,end,*[f for f in extra if start<=f<=end]}
     if onset is not None and start<=onset<=end:required.add(onset)
     missing=required-set(valid)
+    if rate is None:return sorted(missing)
+    step=max(1,int(math.floor(fps/rate)))
     anchors=sorted({start,end,*valid})
     for a,b in zip(anchors,anchors[1:]):
         for f in range(a+step,b,step):missing.add(f)
     return sorted(missing)
+
+def box_observed(record,boxes):
+    """Manual geometry counts immediately; model boxes require an editor visit."""
+    if valid_record(record,boxes):return True
+    if len(boxes)!=1:return False
+    box=boxes[0]
+    if not (box.get('human_verified') or str(box.get('source','')).lower().startswith(('manual','human'))):return False
+    try:signature(boxes);return True
+    except (ValueError,TypeError,KeyError):return False
 
 def snap_edge(frame,start,end,x,start_x,end_x,pixels=3,frames=1):
     frame=max(start,min(frame,end))

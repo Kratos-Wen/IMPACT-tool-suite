@@ -23,7 +23,7 @@ worker=YoloInferenceWorker(SimpleNamespace(names={0:'old_part'}),[],0.5,0.5,{0:'
 assert worker._class_name_for_id(0)=='part'
 selector=AttributeSelector();selector.setOptions(PROFILE['anomaly_labels'],'unreviewed')
 selector.toggle('attribute_a');selector.toggle('attribute_b');assert export_review(selector.currentText(),PROFILE)==dict(anomaly_labels=['attribute_a','attribute_b'],anomaly_review_state='reviewed')
-selector.toggle('unknown');assert export_review(selector.currentText(),PROFILE)['anomaly_review_state']=='partial'
+selector.toggle('unknown');assert selector.findData('unknown')==-1 and export_review(selector.currentText(),PROFILE)['anomaly_review_state']=='reviewed'
 selector.toggle('confirm');assert export_review(selector.currentText(),PROFILE)['anomaly_review_state']=='reviewed'
 selector.toggle('normal');assert export_review(selector.currentText(),PROFILE)['anomaly_labels']==[]
 source=dict(version='legacy',video_id='1234567_r1_a_a',fps=15,frame_count=60,object_library={'0':dict(label='old_combo_1',category='old_combo'),'5':dict(label='old_part_2',category='old_part')},tracks={'T_OBJ_0':dict(object_id=0,category='old_combo',boxes=[dict(frame=2,bbox=[1,2,10,20])]),'T_OBJ_5':dict(object_id=5,category='old_part',boxes=[dict(frame=3,bbox=[3,4,12,22])])},hoi_events={'left_hand':[dict(event_id='L_original',start_frame=2,contact_onset_frame=None,end_frame=10,verb='hold',noun_object_id=0,links=dict(target_track_id='T_OBJ_0'),anomaly_label='old_error')],'right_hand':[]})
@@ -32,7 +32,7 @@ original=copy.deepcopy(source);converted=adapt_annotation(source,PROFILE);assert
 assert converted['schema']=='hoi-annotation' and 'version' not in converted
 assert converted['shared_assembly']['states'][0]['interfaces']['part--attachment']=={'1':None,'2':None}
 assert converted['tracks']['T_OBJ_5']['boxes']==source['tracks']['T_OBJ_5']['boxes']
-assert converted['hoi_events']['left_hand'][0]['anomaly_review_state']=='unreviewed'
+assert converted['hoi_events']['left_hand'][0]['anomaly_review_state']=='reviewed'
 assert adapt_annotation(converted,PROFILE)==converted
 alias_source=copy.deepcopy(source)
 alias_source['object_library']['7']={'label':'old_combo_2','category':'old_combo'}
@@ -59,7 +59,7 @@ for iteration in range(25):
  assert left['anomaly_evidence']==event['anomaly_evidence']
  assert out['schema']=='hoi-annotation' and 'version' not in out
  w._load_annotations_v2(json.loads(json.dumps(out)))
-assert w._normalize_anomaly_label('old_temporal_category')=='unknown'
+assert w._normalize_anomaly_label('old_temporal_category')=='normal'
 # Auxiliary event graph exports the same multilabel state as the main editor.
 from core.structured_event_graph import build_hoi_event_graph
 current_graph=build_hoi_event_graph(w.events)

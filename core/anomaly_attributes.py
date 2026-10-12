@@ -1,4 +1,4 @@
-"""Profile-driven multilabel attributes and explicit review states."""
+"""Profile-driven anomaly types. An empty selection is normal."""
 import re
 
 STATES = {'unreviewed', 'reviewed', 'unknown', 'partial'}
@@ -19,20 +19,14 @@ def normalize(value, profile):
     aliases = {key(k):key(v) for k,v in profile.get('anomaly_aliases', {}).items()}
     found = list(dict.fromkeys(aliases.get(t,t) for t in tokens(value)))
     labels = [x for x in options if x in found]
-    unknown = 'unknown' in found or any(x not in options and x not in CONTROLS for x in found)
-    if labels:
-        marker = ['unknown'] if unknown else ['unreviewed'] if 'unreviewed' in found else []
-        return '; '.join(labels + marker)
-    if unknown:
-        return 'unknown'
-    return 'normal' if 'normal' in found else 'unreviewed'
+    return '; '.join(labels) if labels else 'normal'
 
 def export_review(value, profile):
     value = normalize(value, profile)
     ts = tokens(value)
     labels = [x for x in ts if x not in CONTROLS]
-    state = 'unreviewed' if 'unreviewed' in ts else 'partial' if labels and 'unknown' in ts else 'unknown' if 'unknown' in ts else 'reviewed'
-    return {'anomaly_labels':labels, 'anomaly_review_state':state}
+    # This field records a resolved classification, not human track verification.
+    return {'anomaly_labels':labels, 'anomaly_review_state':'reviewed'}
 
 def display_value(event, profile):
     if 'anomaly_labels' not in event:

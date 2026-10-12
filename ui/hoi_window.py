@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+import sys
 from collections import defaultdict
 from PyQt5.QtWidgets import (
     QAction,
@@ -125,7 +126,7 @@ from core.videomae_v2_logic import (
 
 _NO_FIELD_VALUE = object()
 from core.project_profile import PROFILE as _PROJECT_PROFILE
-_DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "unreviewed"))
+_DEFAULT_ANOMALY_LABEL = 'normal'
 _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
 _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
 
@@ -1068,8 +1069,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.resize(1280, 840)
         self._on_close = on_close
         self.op_logger = logger or OperationLogger(False)
-        self._ui_preferences = load_ui_preferences(default_ui_scale=0.85)
-        self._ui_scale = float(self._ui_preferences.get("ui_scale", 0.85) or 0.85)
+        default_scale = 1.0 if sys.platform == 'darwin' else 0.85
+        self._ui_preferences = load_ui_preferences(default_ui_scale=default_scale)
+        self._ui_scale = float(self._ui_preferences.get("ui_scale", default_scale) or default_scale)
         self._show_quick_start_on_startup = bool(
             self._ui_preferences.get("show_quick_start_on_startup", False)
         )
@@ -1339,7 +1341,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.file_menu.addAction("Use independent Object for selected hand", self._unlink_shared_assembly)
         self._install_frame_review()
         self._install_annotation_policy()
-        self.act_frame_review_status=self.file_menu.addAction("Frame review: no active event")
+        self.act_frame_review_status=self.file_menu.addAction("Keyframes: select an event")
         self.act_frame_review_status.setEnabled(False)
 
         detect_menu = self.file_menu.addMenu("Detection")
@@ -1866,7 +1868,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.lbl_review_status.setObjectName("statusSubtle")
         self.lbl_review_status.setWordWrap(True)
         review_status_layout.addWidget(self.lbl_review_status)
-        self.lbl_frame_review_status=QLabel("Frame review: no active event")
+        self.lbl_frame_review_status=QLabel("Keyframes: select an event")
         review_status_layout.addWidget(self.lbl_frame_review_status)
         review_nav_row = QHBoxLayout()
         review_nav_row.setContentsMargins(0, 0, 0, 0)
@@ -2085,6 +2087,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.combo_inline_noun.currentIndexChanged.connect(self._on_inline_noun_changed)
         self.combo_inline_noun.activated[int].connect(self._on_inline_noun_changed)
         inline_form.addWidget(self.combo_inline_noun, 1)
+        self.btn_inline_assembly = QPushButton('Assembly…')
+        self.btn_inline_assembly.setToolTip('Edit components of the current instance or create an independent assembly.')
+        self.btn_inline_assembly.clicked.connect(self._open_assembly_editor)
+        inline_form.addWidget(self.btn_inline_assembly)
         try:
             verb_editor = self.combo_inline_verb.lineEdit()
             if verb_editor is not None:
@@ -2212,7 +2218,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_inline_edit_boxes.toggled.connect(self._set_edit_boxes_enabled)
         inline_actions.addWidget(self.btn_inline_edit_boxes)
         self.btn_correct_track = QPushButton("Track Correction")
-        self.btn_correct_track.setToolTip("Choose event targets and a forward/backward interval. Preserves human anchors and other IDs; one Undo restores the batch.")
+        self.btn_correct_track.setToolTip("Optional local tracking. Required annotation uses SOE and anomaly keyframes; dense propagation may be run centrally.")
         self.btn_correct_track.clicked.connect(self._start_correction_propagation)
         inline_actions.addWidget(self.btn_correct_track)
         self.btn_inline_jump_start = QPushButton("Start")
@@ -2227,6 +2233,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_inline_jump_end.setProperty("compactChip", True)
         self.btn_inline_jump_end.clicked.connect(self._jump_to_selected_end)
         inline_actions.addWidget(self.btn_inline_jump_end)
+        self.btn_anomaly_keyframe = QPushButton('+ Anomaly frame')
+        self.btn_anomaly_keyframe.setToolTip('Add the current frame as anomaly evidence; draw the hand, object and tool boxes here.')
+        self.btn_anomaly_keyframe.clicked.connect(self._require_current_frame)
+        inline_actions.addWidget(self.btn_anomaly_keyframe)
         inline_actions.addSpacing(4)
         self.btn_inline_confirm_onset = QPushButton("Confirm Onset")
         self.btn_inline_confirm_onset.clicked.connect(self._confirm_inline_onset)
@@ -8236,11 +8246,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if size <= 0:
             size = 8.0
         scaled = size * self._normalized_ui_scale()
-        return max(6.8, min(8.4, scaled))
+        return max(10.5 if sys.platform == 'darwin' else 7.5, min(16.0, scaled))
 
     def _apply_professional_ui_style(self) -> None:
         body_pt = self._preferred_base_font_pt()
-        caption_pt = max(6.3, body_pt - 0.30)
+        caption_pt = max(9.5 if sys.platform == 'darwin' else 7.0, body_pt - 0.30)
         title_pt = body_pt
         scale = self._normalized_ui_scale()
         group_margin_top = self._scaled_ui_px(12, 10)
@@ -8248,13 +8258,13 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         tab_pad_v = self._scaled_ui_px(3, 2)
         tab_pad_h = self._scaled_ui_px(8, 6)
         tab_min_w = self._scaled_ui_px(52, 48)
-        control_h = self._scaled_ui_px(22, 20)
+        control_h = max(self._scaled_ui_px(22, 20), int(math.ceil(body_pt * 96 / 72)) + 10)
         control_radius = self._scaled_ui_px(7, 6)
         control_pad_v = self._scaled_ui_px(1.5, 1)
         control_pad_h = self._scaled_ui_px(5, 4)
-        compact_h = self._scaled_ui_px(19, 17)
+        compact_h = max(self._scaled_ui_px(19, 17), control_h - 2)
         compact_pad_h = self._scaled_ui_px(5, 4)
-        list_item_h = self._scaled_ui_px(22, 20)
+        list_item_h = max(self._scaled_ui_px(22, 20), control_h)
         slider_handle = self._scaled_ui_px(14, 12)
         slider_margin = self._scaled_ui_px(5, 4)
         font = self.font()
@@ -8273,7 +8283,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 border-radius: 10px;
             }}
             QWidget, QFrame, QLabel, QGroupBox, QPushButton, QToolButton, QComboBox, QLineEdit, QSpinBox, QListWidget, QTabWidget {{
-                font-family: "Segoe UI", "Microsoft YaHei UI", "Tahoma", "Arial";
+                font-family: "{QApplication.instance().font().family() if QApplication.instance() else 'Arial'}";
             }}
             QGroupBox {{
                 background: #FFFFFF;
@@ -8869,7 +8879,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 continue
             onset = h.get("functional_contact_onset", s)
             verb = h.get("verb", "")
-            base_color = QColor("#16a34a" if self._hand_completion_state(h, hand_key=hand_key).get("complete") else "#dc2626")
+            base_color = self._hoi_color_for_verb(verb)
             segs.append(
                 {
                     "event_id": ev.get("event_id"),
@@ -8878,6 +8888,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     "onset": int(onset) if onset is not None else int(s),
                     "verb": verb,
                     "color": base_color,
+                    "complete": bool(self._hand_completion_state(h, hand_key=hand_key).get('complete')),
                     "auto_color": base_color is None,
                 }
             )
@@ -8990,12 +9001,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if type(frame) is not int:
                 continue
             for entity in self._review_entities(hand_data, hand_key, frame):
-                records = getattr(self, 'frame_review', {}).get(str(frame), {})
-                if valid_record(records.get(entity), self._boxes_for_review(entity, frame)):
+                if self._box_evidence_complete(entity, frame):
                     continue
                 role = 'hand' if entity.startswith('H:') else 'instrument' if entity == 'O:'+str(self._hand_instrument_object_id(hand_data)) else 'noun'
                 state['missing_roles'].setdefault(role, []).append(label)
-        state['missing'] = [role+' bbox review' for role in state['missing_roles']]
+        state['missing'] = [role+' keyframe boxes' for role in state['missing_roles']]
         state['details'] = [role+': '+', '.join(labels) for role, labels in state['missing_roles'].items()]
         return state
 
@@ -9079,6 +9089,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 suggested_fields.append(field_name)
 
         missing.extend(self._policy_missing(hand_data) if has_data else [])
+        own=next((ev['event_id'] for ev in self.events if ev.get('hoi_data',{}).get(hand_key) is hand_data),None)
+        if own is None and self.event_draft.get(hand_key) is hand_data:own=self.selected_event_id
+        if own is None:own=next((ev['event_id'] for ev in self.events if ev.get('hoi_data',{}).get(hand_key)==hand_data),None)
+        if type(start_value) is int and type(end_value) is int and self._interval_conflict(hand_key,start_value,end_value,own) is not None:
+            missing.append('overlapping event boundaries')
         state.update(
             {
                 "has_data": has_data,
@@ -9094,7 +9109,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         matching={ev['event_id'] for ev in self.events if ev.get('hoi_data',{}).get(hand_key)==hand_data}
         if not matching and self.selected_event_id is not None:matching={self.selected_event_id}
         if state['has_data'] and any(i['event_id'] in matching and i['hand']==hand_key for i in self._frame_review_issues()):
-            state['missing'].append('frame review');state['complete']=False
+            if not state['bbox_missing']:state['missing'].append('additional keyframe boxes')
+            state['complete']=False
         return state
 
     def _hoi_title_for_hand(self, hand_key: str) -> str:
@@ -10283,13 +10299,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         try:
             for name in _PROJECT_PROFILE.get('noun_classes',[]):
                 if name=='assembly' or instance_category(name,_PROJECT_PROFILE,self.class_map.values()) in known:continue
-                configured=_PROJECT_PROFILE.get('singleton_object_ids',{})
-                reserved={value for value in configured.values() if type(value) is int and value>=0}
                 used=set(self.global_object_map.values())|{box.get('id') for box in self.raw_boxes}
-                requested=configured.get(name)
-                uid=requested if type(requested) is int and requested>=0 and requested not in used else self.object_id_counter
-                if uid!=requested:
-                    while uid in used or uid in reserved:uid+=1
+                uid=max(1,self.object_id_counter)
+                while uid in used:uid+=1
                 self.object_id_counter=max(self.object_id_counter,uid+1)
                 self._register_object_entry(uid,name);known.add(instance_category(name,_PROJECT_PROFILE,self.class_map.values()))
         finally:
@@ -10311,7 +10323,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if not isinstance(profile_data, dict):
             raise ValueError("Invalid task project profile")
         activate_project_profile(profile)
-        _DEFAULT_ANOMALY_LABEL = str(_PROJECT_PROFILE.get("default_anomaly_label", "unreviewed"))
+        _DEFAULT_ANOMALY_LABEL = 'normal'
         _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
         _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
         self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
@@ -12653,6 +12665,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         new_onset = max(new_start, min(new_onset, new_end))
         return new_start, new_end, new_onset
 
+    def _interval_conflict(self,hand_key,start,end,exclude=None):
+        from core.event_intervals import interiors_overlap
+        for event in self.events:
+            if event.get('event_id')==exclude:continue
+            hand=event.get('hoi_data',{}).get(hand_key,{})
+            s=hand.get('interaction_start');e=hand.get('interaction_end')
+            if type(s) is int and type(e) is int and interiors_overlap(start,end,s,e):return event.get('event_id')
+        return None
+
     def _on_hoi_timeline_update(
         self, event_id: int, hand_key: str, start: int, end: int, onset: int
     ):
@@ -12674,6 +12695,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         start_changed = prev_start.get("value") != new_start
         onset_changed = prev_onset.get("value") != new_onset
         end_changed = prev_end.get("value") != new_end
+        if self._interval_conflict(hand_key,new_start,new_end,event_id) is not None:
+            QMessageBox.warning(self,'Event boundaries','Events for one hand may share a boundary frame, but their interiors cannot overlap.');return
         if not (start_changed or onset_changed or end_changed):
             if self.selected_event_id == event_id:
                 self.event_draft[hand_key] = copy.deepcopy(h)
@@ -12781,6 +12804,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             end,
             onset,
         )
+        if self._interval_conflict(hand_key,new_start,new_end) is not None:
+            QMessageBox.warning(self,'Event boundaries','Events for one hand may share a boundary frame, but their interiors cannot overlap.');return None
         self._push_undo()
         new_event = {
             "event_id": self.event_id_counter,
@@ -17693,11 +17718,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._incomplete_issues = issues
         if not issues:
             self.lbl_incomplete.setText("Incomplete: none")
-            self.lbl_incomplete.setToolTip("No field or box issues found. Semantic and anomaly review is still required.")
+            self.lbl_incomplete.setToolTip("Required fields and keyframe boxes are complete.")
             self._set_status_chip(getattr(self, "lbl_incomplete_chip", None), "Incomplete 0", "ok")
             if getattr(self, "lbl_review_status", None):
-                self.lbl_review_status.setText("No field or box issues found. Semantic and anomaly review is still required.")
-                self.lbl_review_status.setToolTip("No field or box issues found. Semantic and anomaly review is still required.")
+                self.lbl_review_status.setText("Required fields and keyframe boxes are complete.")
+                self.lbl_review_status.setToolTip("Required fields and keyframe boxes are complete.")
             self._set_status_card_tone(
                 getattr(self, "review_status_card", None),
                 "active" if bool(getattr(self, "validation_enabled", False)) else "ok",
@@ -18139,6 +18164,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             from core.annotation_archive import archive_source
             archive = archive_source(annotation_path)
         data = adapt_annotation(data, _PROJECT_PROFILE)
+        from core.local_instances import localize_instances
+        data = localize_instances(data, _PROJECT_PROFILE)
         self._annotation_provenance = copy.deepcopy(data.get('provenance', {}))
         if archive:self._annotation_provenance['original_archive'] = archive
         data = normalize_noun_aliases(data)
@@ -18239,7 +18266,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 or f"obj_{uid}"
             )
             class_id = info.get("class_id")
-            label = self._canonical_label_name(label)
+            label = self._noun_display_name(info.get("category") or label)
             if not label:
                 label = f"obj_{uid}"
             if class_id is not None:
@@ -18254,14 +18281,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     and str(class_id) not in self.class_map
                 ):
                     self.class_map[class_id] = label
-            self.global_object_map[label] = uid
-            self.id_to_category[label] = label
+            self._register_object_entry(uid,label)
+            for name,value in self.global_object_map.items():
+                if value==uid:self.id_to_category[name]=info.get('category') or self._noun_display_name(label)
             max_obj_id = max(max_obj_id, uid)
-            display_text = f"[{uid}] {label}"
-            for combo in (getattr(self, "combo_target", None), getattr(self, "combo_instrument", None)):
-                if isinstance(combo, QComboBox) and self._object_label_is_selectable(label):
-                    combo.addItem(display_text, uid)
-        retired = [int(uid) for uid in self._annotation_provenance.get('assembly_identity_map',{})]
+        retired = [] if self._annotation_provenance.get('video_local_instances') else [int(uid) for uid in self._annotation_provenance.get('assembly_identity_map',{})]
         self.object_id_counter = max([max_obj_id,*retired]) + 1
         self.box_id_counter = max(self.object_id_counter + 1, 1)
 
@@ -18786,8 +18810,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         object_library = {}
         for name, uid in sorted(self.global_object_map.items(), key=lambda x: x[1]):
-            export_name = self._canonical_label_name(name)
-            category = self.id_to_category.get(name, export_name)
+            export_name = self._noun_display_name(name)
+            category = self._noun_display_name(self.id_to_category.get(name, export_name))
             if any(s['object_id']==uid and len(s['components'])>1 for s in self._assembly_data().get('states',[])):
                 category = 'assembly'
             entry = {"label": export_name, "category": category}
@@ -18804,7 +18828,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 uid = rb.get("id")
                 if uid is None or str(uid) in object_library:
                     continue
-                export_label = self._canonical_label_name(label)
+                export_label = self._noun_display_name(label)
                 entry = {"label": export_label, "category": export_label}
                 cid = self._class_id_for_object(uid, label)
                 if cid is not None:
@@ -18814,7 +18838,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         def label_for_id(uid):
             for name, id_val in self.global_object_map.items():
                 if id_val == uid:
-                    return self._canonical_label_name(name)
+                    return self._noun_display_name(name)
             return None
 
         # --------------------------------------
@@ -19067,6 +19091,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _on_player_playback_state_changed(self, _playing: bool):
         self._update_play_pause_button()
+        self._schedule_box_observation()
 
     def _update_play_pause_button(self):
         playing = bool(getattr(self.player, "is_playing", False))
@@ -19206,7 +19231,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 explicit_label = str(b.get("label") or "").strip()
                 if explicit_label:
                     if name.startswith("ID_") or self._norm_category(explicit_label) != self._norm_category(name):
-                        name = explicit_label
+                        name = self._noun_display_name(explicit_label)
                 cid = b.get("class_id")
                 if cid is None:
                     cid = self._class_id_for_label(b.get("label") or name)
@@ -19219,10 +19244,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
             from core.frame_review import valid_record
             entity="H:"+norm_hand if norm_hand else "O:"+str(b.get("id"))
-            reviewed=valid_record(getattr(self,"frame_review",{}).get(str(frame),{}).get(entity),self._boxes_for_review(entity,frame))
+            reviewed=self._box_evidence_complete(entity,frame)
             item = QListWidgetItem(("✓ " if reviewed else "○ ")+item_txt)
             item.setForeground(QColor("#15803d" if reviewed else "#a16207"))
-            item.setToolTip("Human verified" if reviewed else "Not verified for this geometry")
+            item.setToolTip("Viewed or manually edited" if self._box_evidence_complete(entity,frame) else "Pause on this frame to view its boxes; adjust any incorrect box.")
             item.setData(Qt.UserRole, b)
             self.list_objects.addItem(item)
             thick = False
@@ -19375,6 +19400,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         if not skip_events:
             self._refresh_events(refresh_boxes=False)
+        self._schedule_box_observation()
 
     def _get_auto_draw_label(self):
         self._pending_draw_box_role = None
@@ -20529,7 +20555,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if not candidates:
             return None, True
         candidates.sort()
-        options=[f'Use existing [{uid}] {name}' for uid,name in candidates]
+        options=[f'Use existing [{uid}] {self._noun_display_name(name)}' for uid,name in candidates]
         singleton=category in _PROJECT_PROFILE.get('singleton_noun_classes',[])
         if not singleton:options.append(f'Create a new {category} instance')
         choice,ok=QInputDialog.getItem(self,'Box instance',
@@ -20709,10 +20735,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return default_for_none
         for name, id_val in self.global_object_map.items():
             if id_val == uid:
-                return name
+                return self._noun_display_name(name)
         if fallback is not None:
             return fallback
         return str(uid)
+
+    def _noun_display_name(self,name):
+        from core.instance_category import instance_category
+        return instance_category(self.id_to_category.get(name,name),_PROJECT_PROFILE,self.class_map.values())
 
     def _object_label_is_selectable(self, label):
         category = re.sub(r"_\d+$", "", str(label or "").strip())
@@ -20736,7 +20766,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             name = f"{base}_{idx}"
         self.global_object_map[name] = uid
         self.id_to_category[name] = base
-        display_text = f"[{uid}] {name}"
+        display_text = f"[{uid}] {self._noun_display_name(name)}"
         if self._object_label_is_selectable(name) and self.combo_target.findData(uid) == -1:
             self.combo_target.addItem(display_text, uid)
         inst_combo = getattr(self, "combo_instrument", None)
@@ -20768,7 +20798,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 for name, uid in sorted(self.global_object_map.items(), key=lambda x: x[1]):
                     if not self._object_label_is_selectable(name):
                         continue
-                    display_text = f"[{uid}] {name}"
+                    display_text = f"[{uid}] {self._noun_display_name(name)}"
                     combo.addItem(display_text, uid)
                 if selected is not None:
                     idx = combo.findData(selected)
@@ -20799,7 +20829,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     suggestions.append(item)
         for name, uid in sorted((getattr(self, "global_object_map", {}) or {}).items(), key=lambda x: x[1]):
             if name:
-                suggestions.append(str(name))
+                suggestions.append(self._noun_display_name(name))
         for value in (getattr(self, "class_map", {}) or {}).values():
             text = str(value or "").strip()
             if text:
@@ -21338,7 +21368,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
                     self.id_to_category[entity_name] = category
 
-                    display_text = f"[{uid}] {entity_name}"
+                    display_text = f"[{uid}] {self._noun_display_name(entity_name)}"
 
                     if combo.findData(uid) == -1:
                         combo.addItem(display_text, uid)
@@ -21445,7 +21475,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         combo = QComboBox()
         current_idx = 0
         for i, (name, uid) in enumerate(candidates):
-            combo.addItem(f"[{uid}] {name}", uid)
+            combo.addItem(f"[{uid}] {self._noun_display_name(name)}", uid)
             if uid == current_uid:
                 current_idx = i
         combo.setCurrentIndex(current_idx)

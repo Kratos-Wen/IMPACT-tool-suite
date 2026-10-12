@@ -96,14 +96,14 @@ def _configure_app_font(app: QApplication) -> None:
         families = set(db.families())
     except Exception:
         families = set()
-    preferred = ["Segoe UI", "Microsoft YaHei UI", "Tahoma", "Arial"]
+    preferred = (["SF Pro Text", "Helvetica Neue", "Arial"] if sys.platform == "darwin" else ["Segoe UI", "Microsoft YaHei UI", "Tahoma", "Arial"])
     font = app.font()
     for family in preferred:
         if not families or family in families:
             font.setFamily(family)
             break
     font.setStyleHint(QFont.SansSerif)
-    target_pt = 8.0 if os.name == "nt" else 8.75
+    target_pt = max(11.0,font.pointSizeF()) if sys.platform == "darwin" else 8.0 if os.name == "nt" else 8.75
     font.setPointSizeF(target_pt)
     app.setFont(font)
 

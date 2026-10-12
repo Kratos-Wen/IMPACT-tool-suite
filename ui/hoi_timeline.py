@@ -119,19 +119,24 @@ class HOITimelineRow(BaseTimelineRow):
                     "onset": onset,
                     "verb": seg.get("verb") or "",
                     "color": seg.get("color"),
+                    "complete": seg.get("complete"),
                 }
             )
         return sorted(segs, key=lambda x: (x["start"], x.get("event_id", -1)))
 
     def _segment_at(self, frame: int) -> Optional[Dict]:
-        for seg in self._segments():
+        segments = self._segments()
+        segments.sort(key=lambda s: s.get('event_id') != self._selected_event_id)
+        for seg in segments:
             if seg["start"] <= frame <= seg["end"]:
                 return seg
         return None
 
     def _hit_segment(self, x: int, y: Optional[int] = None) -> tuple:
         tol = 5
-        for seg in self._segments():
+        segments=self._segments()
+        segments.sort(key=lambda s:s.get('event_id')!=self._selected_event_id)
+        for seg in segments:
             x1 = self.frame_to_x(seg["start"])
             x2 = self.frame_to_x(seg["end"])
             if x1 - tol <= x <= x2 + tol:
@@ -155,10 +160,12 @@ class HOITimelineRow(BaseTimelineRow):
         return snap_edge(int(frame),int(start),int(end),int(x),self.frame_to_x(int(start)),self.frame_to_x(int(end)))
 
     def _overlaps(self, start: int, end: int, exclude_id: Optional[int]) -> bool:
+        from core.event_intervals import interiors_overlap
         for seg in self._segments():
             if exclude_id is not None and seg.get("event_id") == exclude_id:
                 continue
-            if not (end < seg["start"] or start > seg["end"]):
+            # Adjacent events may share one transition frame; interiors cannot overlap.
+            if interiors_overlap(start,end,seg['start'],seg['end']):
                 return True
         return False
 
@@ -195,15 +202,16 @@ class HOITimelineRow(BaseTimelineRow):
                 color = QColor(color)
             sel = seg.get("event_id") == self._selected_event_id
             fill = QColor(color).lighter(112 if sel else 108)
-            outline = accent if sel else color.darker(140)
+            complete = seg.get('complete')
+            outline = QColor('#15803d' if complete else '#dc2626') if complete is not None else color.darker(140)
             p.setBrush(QBrush(fill))
-            p.setPen(QPen(outline, 3 if sel else 1))
+            p.setPen(QPen(outline, 3 if complete is not None or sel else 1))
             p.drawRoundedRect(rect, 5, 5)
 
             if sel:
                 p.setBrush(Qt.NoBrush)
-                p.setPen(QPen(QColor(255, 255, 255, 120), 1))
-                p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 4, 4)
+                p.setPen(QPen(accent, 1))
+                p.drawRoundedRect(rect.adjusted(3, 3, -3, -3), 3, 3)
 
             if seg.get("verb"):
                 p.setPen(QPen(QColor("#101828") if sel else QColor("#344054")))

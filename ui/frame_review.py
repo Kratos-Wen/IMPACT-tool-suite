@@ -1,17 +1,25 @@
 """Compact, explicit frame review without changing event semantics."""
 import copy
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt,QTimer
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QMessageBox,QShortcut,QInputDialog
-from core.frame_review import signature,valid_record,missing_frames
+from core.frame_review import signature,valid_record,missing_frames,box_observed
+from core.project_profile import PROFILE
+from core.anomaly_attributes import export_review
+from core.hoi_query_controller import get_field_state
 from core.assembly_timeline import resolve_object,reference_id,change_frames,track_segments
 from core.correction_propagation import object_instance,protected
 
 class FrameReviewMixin:
     def _install_frame_review(self):
-        menu=self.file_menu.addMenu('Frame review')
+        self._observed_frame_context=None
+        self._observed_frame_timer=QTimer(self)
+        self._observed_frame_timer.setSingleShot(True)
+        self._observed_frame_timer.setInterval(400)
+        self._observed_frame_timer.timeout.connect(self._observe_displayed_boxes)
+        menu=self.file_menu.addMenu('Keyframes')
         self._frame_review_actions={}
-        for label,key,fn in [('Verify visible boxes','Ctrl+Return',self._verify_current_frame),('Next frame needing review','Alt+N',lambda:self._jump_frame_review(1)),('Previous frame needing review','Alt+P',lambda:self._jump_frame_review(-1))]:
+        for label,key,fn in [('Verify visible boxes','Ctrl+Return',self._verify_current_frame),('Next missing keyframe','Alt+N',lambda:self._jump_frame_review(1)),('Previous missing keyframe','Alt+P',lambda:self._jump_frame_review(-1))]:
             action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
             sid={"Ctrl+Return":"hoi.verify_frame","Alt+N":"hoi.next_review_frame","Alt+P":"hoi.prev_review_frame"}[key]
             self._frame_review_actions[sid]=(action,key)
@@ -25,7 +33,7 @@ class FrameReviewMixin:
             action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
             self._frame_review_actions[sid]=(action,key)
         menu.addAction('Mark selected entity not visible...',self._mark_not_visible)
-        menu.addAction('Require review at current frame',self._require_current_frame)
+        menu.addAction('Add anomaly keyframe',self._require_current_frame)
         menu.addSeparator()
         menu.addAction('Clear automatic track in this event...',lambda:self._clear_event_track(False))
         menu.addAction('Clear all boxes in this event...',lambda:self._clear_event_track(True))
@@ -92,10 +100,88 @@ class FrameReviewMixin:
         frame=int(self.player.current_frame);s=hand.get('interaction_start');e=hand.get('interaction_end')
         if type(s) is not int or type(e) is not int or not s<=frame<=e:return
         self._push_undo();hand['required_review_frames']=sorted(set(hand.get('required_review_frames',[])+[frame]))
+        labels=export_review(hand.get('anomaly_label'),PROFILE)['anomaly_labels']
+        evidence=hand.setdefault('_event_extra',{}).setdefault('anomaly_evidence',{})
+        for label in labels:
+            item=evidence.setdefault(label,{'view':'ego','intervals':[],'note':''})
+            if not any(a<=frame<=b for a,b in item['intervals']):item['intervals'].append([frame,frame])
         for event in self.events:
             if event['event_id']==self.selected_event_id:
                 event['hoi_data'][self.selected_hand_label]['required_review_frames']=list(hand['required_review_frames'])
+                event['hoi_data'][self.selected_hand_label]['_event_extra']=copy.deepcopy(hand['_event_extra'])
         self._bump_query_state_revision();self._refresh_events()
+
+    def _box_evidence_complete(self,entity,frame):
+        return box_observed(getattr(self,'frame_review',{}).get(str(frame),{}).get(entity),self._boxes_for_review(entity,frame))
+
+    def _observation_context(self):
+        return (str(self.video_path),self.selected_event_id,self.selected_hand_label,
+                int(self.player.current_frame),getattr(self,'_bbox_revision',0),id(self.raw_boxes))
+
+    def _schedule_box_observation(self):
+        timer=getattr(self,'_observed_frame_timer',None)
+        if timer is None:return
+        frame=int(self.player.current_frame)
+        if (not self.isVisible() or not self.isActiveWindow() or self.player.is_playing or
+                self.selected_event_id is None or self.selected_hand_label is None or
+                getattr(self.player,'_displayed_frame',None)!=frame):
+            timer.stop();self._observed_frame_context=None;return
+        hand=self._selected_hand_data() or {};s=hand.get('interaction_start');e=hand.get('interaction_end')
+        if type(s) is not int or type(e) is not int or not s<=frame<=e or not hand.get('verb'):return
+        pending=[key for key in self._review_entities(hand,self.selected_hand_label,frame)
+                 if self._boxes_for_review(key,frame) and not self._box_evidence_complete(key,frame)]
+        suggested=any(get_field_state(hand,f).get('status')=='suggested' for f in ('interaction_start','functional_contact_onset','interaction_end','verb','noun_object_id'))
+        if not pending and not suggested:return
+        context=self._observation_context()
+        if context!=self._observed_frame_context or not timer.isActive():
+            self._observed_frame_context=context;timer.start()
+
+    def _observe_displayed_boxes(self):
+        context=self._observed_frame_context
+        self._observed_frame_context=None
+        if (context is None or context!=self._observation_context() or not self.isVisible() or
+                not self.isActiveWindow() or self.player.is_playing or
+                getattr(self.player,'_displayed_frame',None)!=self.player.current_frame):return
+        frame=int(self.player.current_frame);hand=self._selected_hand_data() or {}
+        records=copy.deepcopy(getattr(self,'frame_review',{}));changed=False
+        for entity in self._review_entities(hand,self.selected_hand_label,frame):
+            rows=self._boxes_for_review(entity,frame)
+            if len(rows)!=1 or self._box_evidence_complete(entity,frame):continue
+            # Only accept an entity actually drawn on the current canvas.
+            visible=any((b.get('label')==self._get_actor_short_label(entity[2:]) if entity.startswith('H:')
+                         else str(b.get('id'))==entity[2:] and not self._normalize_hand_label(b.get('label')))
+                        and not b.get('synthetic') for b in self.player.overlay_boxes)
+            if not visible:continue
+            try:digest=signature(rows)
+            except (ValueError,TypeError,KeyError):continue
+            records.setdefault(str(frame),{})[entity]={'state':'verified','signature':digest,'source':'viewed_in_editor'}
+            rows[0]['human_verified']=True;changed=True
+        if changed:
+            self.frame_review=records;self._bump_query_state_revision()
+        accepted=self._accept_viewed_event_fields(hand)
+        if changed or accepted:
+            self._refresh_boxes_for_frame(frame,lightweight=True)
+            self._refresh_frame_review_status()
+
+    def _accept_viewed_event_fields(self,hand):
+        # Visiting the event's keyframes accepts displayed values without another checklist.
+        # Keep the original machine states for traceability; never accept missing values.
+        frames={hand.get(f) for f in ('interaction_start','functional_contact_onset','interaction_end')}
+        if (any(type(f) is not int for f in frames) or not hand.get('verb') or
+                self._noun_required_for_verb(hand['verb']) and self._hand_noun_object_id(hand) is None or
+                self._policy_missing(hand) or
+                any(not self._box_evidence_complete(entity,f) for f in frames for entity in self._review_entities(hand,self.selected_hand_label,f))):return False
+        changed=False
+        for field in ('interaction_start','functional_contact_onset','interaction_end','verb','noun_object_id'):
+            original=get_field_state(hand,field)
+            if original.get('status')!='suggested':continue
+            if hand.get(field) is None or hand.get(field)=='':continue
+            hand.setdefault('_event_extra',{}).setdefault('source_field_states',{}).setdefault(field,original)
+            self._set_hand_field_state(hand,field,source='viewed_in_editor',status='confirmed',note='Accepted through paused SOE views')
+            changed=True
+        if changed:
+            self._apply_draft_to_selected_event();self._bump_query_state_revision();self._refresh_events()
+        return changed
 
     def _verify_current_frame(self):
         entities=self._current_review_entities();frame=int(self.player.current_frame)
@@ -146,15 +232,18 @@ class FrameReviewMixin:
                 valid=[]
                 for text,row in records.items():
                     frame=int(text)
-                    if s<=frame<=e and all(valid_record(row.get(entity),index.get((frame,entity),[])) for entity in self._review_entities(hand,key,frame)):valid.append(frame)
+                    if s<=frame<=e and all(box_observed(row.get(entity),index.get((frame,entity),[])) for entity in self._review_entities(hand,key,frame)):valid.append(frame)
                 uid=reference_id(hand,self._assembly_data(),s)
-                extra=change_frames(self._assembly_data(),uid,s,e) if hand.get('shared_assembly_ref') and uid is not None else []
-                extra += [f-1 for f in list(extra) if f>s]
-                # Check both sides of each geometry switch, as well as the merge frame.
-                extra += [row['end_frame'] for row in track_segments(self._assembly_data(),uid,s,e)] if hand.get('shared_assembly_ref') else []
-                extra+=hand.get('required_review_frames',[])
+                extra=list(hand.get('required_review_frames',[]))
+                evidence=hand.get('_event_extra',{}).get('anomaly_evidence',{})
+                extra += [f for label in export_review(hand.get('anomaly_label'),PROFILE)['anomaly_labels']
+                          for pair in evidence.get(label,{}).get('intervals',[]) for f in pair]
+                # Hand-drawn SOE/anomaly boxes count without a separate review click.
+                required={s,e,*extra}
+                if type(o) is int:required.add(o)
+                valid += [f for f in required if s<=f<=e and all(box_observed(records.get(str(f),{}).get(entity),index.get((f,entity),[])) for entity in self._review_entities(hand,key,f))]
                 for frame in missing_frames(s,e,o,valid,fps,extra=extra):
-                    issues.append(dict(event_id=event['event_id'],hand=key,field='bbox_evidence',code='human_frame_review_'+str(frame),frame=frame,missing=['Human frame review required']))
+                    issues.append(dict(event_id=event['event_id'],hand=key,field='bbox_evidence',code='keyframe_boxes_'+str(frame),frame=frame,missing=['Keyframe boxes missing or not viewed']))
         result=sorted(issues,key=lambda x:(x['frame'],str(x['event_id']),x['hand']))
         self._frame_review_cache_key=cache_key;self._frame_review_cache=result
         self._frame_review_cache_records=records
@@ -175,8 +264,8 @@ class FrameReviewMixin:
     def _refresh_frame_review_status(self):
         if not getattr(self,'act_frame_review_status',None):return
         frame=int(self.player.current_frame);entities=self._current_review_entities();row=getattr(self,'frame_review',{}).get(str(frame),{})
-        done=sum(valid_record(row.get(k),self._boxes_for_review(k,frame)) for k in entities)
-        text=f'Frame {frame}: '+('Reviewed' if done==len(entities) else 'Needs review')+f' ({done}/{len(entities)})' if entities else 'Frame review: no active event'
+        done=sum(box_observed(row.get(k),self._boxes_for_review(k,frame)) for k in entities)
+        text=f'Frame {frame}: '+('Boxes complete' if done==len(entities) else 'Complete the visible boxes')+f' ({done}/{len(entities)})' if entities else 'Keyframes: select an event'
         self.act_frame_review_status.setText(text)
         label=getattr(self,'lbl_frame_review_status',None)
         if label:

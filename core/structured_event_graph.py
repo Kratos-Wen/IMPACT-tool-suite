@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from core.project_profile import PROFILE
 from core.anomaly_attributes import normalize, export_review, display_value, is_positive
 
-DEFAULT_ANOMALY_LABEL = 'unreviewed'
+DEFAULT_ANOMALY_LABEL = 'normal'
 
 FIELD_TO_ENTRY_KEY = {
     "interaction_start": "start_frame",

@@ -35,7 +35,7 @@ def reuse(parent,title,text,choices,*args):
  options.append(list(choices));return choices[0],True
 QInputDialog.getItem=reuse
 assert w._choose_drawn_instance_id('anti_vibration_handle')==(77,True)
-assert options[-1]==['Use existing [77] anti_vibration_handle_1']
+assert options[-1]==['Use existing [77] anti_vibration_handle']
 assert w._choose_drawn_instance_id('torx_screwdriver_15')==(78,True)
 assert all('20' not in text for text in options[-1])
 assert w._choose_drawn_instance_id('torx_screwdriver_20')==(79,True)

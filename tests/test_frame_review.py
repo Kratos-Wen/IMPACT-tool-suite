@@ -15,6 +15,9 @@ assert missing_frames(0,0,0,[],15)==[0]
 assert not missing_frames(0,14,0,[0,7,14],15)
 assert 14 in missing_frames(0,14,0,[0,7],15)
 assert 3 in missing_frames(0,14,0,[0,7,14],15,extra=[3])
+assert missing_frames(0,140,70,[0,70,140],15)==[]
+assert missing_frames(0,140,70,[0,140],15)==[70]
+assert 7 in missing_frames(0,140,70,[0,70,140],15,rate=2)
 assert snap_edge(1,0,1,1,0,1)==1
 assert snap_edge(8,0,100,1,0,10)==8
 print('FRAME_REVIEW_INVALIDATION_COVERAGE_AND_FINE_SNAP_PASS')

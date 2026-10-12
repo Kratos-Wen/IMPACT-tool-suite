@@ -68,7 +68,7 @@ def adapt_annotation(source, profile):
                 # Legacy negatives and broad labels do not certify the current taxonomy.
                 candidates=(profile.get('legacy_anomaly_candidates',{}) or {}).get(key(raw),[])
                 event['anomaly_labels']=list(candidates)
-                event['anomaly_review_state']='unreviewed'
+                event['anomaly_review_state']='reviewed'
                 old_events+=1
             else:
                 event.update(export_review(display_value(event,profile),profile))
