@@ -170,4 +170,5 @@ def adapt_annotation(source, profile):
     data['schema']=SCHEMA
     # Canonicalize nested class dictionaries without changing IDs or source records.
     from core.noun_aliases import normalize_noun_aliases
-    return normalize_noun_aliases(data)
+    from core.noun_constraints import constrain_nouns
+    return constrain_nouns(normalize_noun_aliases(data), profile)

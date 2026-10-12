@@ -52,6 +52,7 @@ jobs:
       - run: python tests/test_frame_review.py
       - run: python tests/test_frame_review_navigation.py
       - run: python tests/test_local_instances.py
+      - run: python tests/test_noun_constraints.py
       - run: python tests/test_keyframe_workflow_gui.py
       - run: python tests/test_box_import.py
       - run: python tests/test_bbox_navigation_gui.py

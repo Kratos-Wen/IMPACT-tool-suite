@@ -5,6 +5,8 @@ from core.annotation_migration import adapt_annotation
 
 
 def editor_candidates(review, *, frames, fps, profile, instance_hints=None):
+    profile = copy.deepcopy(profile)
+    profile['rejected_noun_classes'] = list(set(profile.get('rejected_noun_classes', [])) | {'unresolved_object'})
     instances = copy.deepcopy(instance_hints or review.get('instances') or {})
     source_events = review.get('events', [])
     referenced = set()

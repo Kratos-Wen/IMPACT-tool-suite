@@ -15,6 +15,13 @@ def localize_instances(source,profile):
     """Normalize once on import. Reopening and deleting instances never renumbers IDs."""
     data=deepcopy(source)
     if data.get('provenance',{}).get('video_local_instances',{}).get('schema')==SCHEMA:
+        for info in data.get('object_library',{}).values():
+            name=instance_category(info.get('category') or info.get('label'),profile)
+            info.update(label=name,category=name)
+        for track in data.get('tracks',{}).values():
+            if str(track.get('object_id')) in data.get('object_library',{}):
+                name=instance_category(track.get('category'),profile)
+                track.update(category=name,instance_name=name)
         return data
     library=data.get('object_library',{});tracks=data.get('tracks',{})
     names={int(uid):instance_category(info.get('category') or info.get('label'),profile)
