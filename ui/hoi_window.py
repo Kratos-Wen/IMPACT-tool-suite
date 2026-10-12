@@ -13191,8 +13191,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._incomplete_last_key = None
         self._incomplete_last_order = None
         self._update_incomplete_indicator()
+        self._loaded_events_generation = getattr(self, '_loaded_events_generation', 0) + 1
+        generation = self._loaded_events_generation
         if getattr(self, "chk_auto_jump_incomplete", None) and self.chk_auto_jump_incomplete.isChecked():
-            QTimer.singleShot(0, self._jump_first_incomplete)
+            QTimer.singleShot(0, lambda: self._jump_first_incomplete()
+                              if self.selected_event_id is None and generation == self._loaded_events_generation else None)
 
     def _on_verb_added(self, lb):
         """lb may be a LabelDef (from LabelPanel) or a name string."""
@@ -19140,7 +19143,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if self.selected_event_id is None:
             return ids
         f = self._assembly_frame() if frame is None else frame
-        relations = self._frame_display_relations(f)
+        relations = [row for row in self._frame_display_relations(f)
+                     if row.get("event_id") == self.selected_event_id]
         draft = getattr(self, "event_draft", {}) or {}
         # Keep incomplete drafts drawable while their boundaries are being entered.
         if not relations and any((d.get('interaction_start') is None or d.get('interaction_end') is None)
