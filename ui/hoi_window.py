@@ -1527,8 +1527,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.rad_draw_inst.toggled.connect(self._update_inline_edit_boxes_button_state)
         self.rad_draw_target.toggled.connect(self._update_inline_edit_boxes_button_state)
         for widget in (self.rad_draw_none, self.rad_draw_inst, self.rad_draw_target):
-            widget.setEnabled(False)
-        self.draw_mode_widget.hide()
+            widget.setEnabled(self.chk_edit_boxes.isChecked())
+        self.draw_mode_widget.setVisible(self.chk_edit_boxes.isChecked())
 
         toolbar_main_row.addLayout(session_row, 0)
         toolbar_main_row.addLayout(transport_row, 1)
@@ -19460,9 +19460,13 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     self.rad_draw_target.setChecked(True)
                 return selected_hand, None
             if choice == instrument_choice:
+                if self.rad_draw_none.isChecked():
+                    return None
                 self._pending_draw_box_role = "instrument"
                 if instrument_name:
                     return instrument_name, self._class_id_for_label(instrument_name)
+                return None
+            if self.rad_draw_none.isChecked():
                 return None
             self._pending_draw_box_role = "noun"
             if target_name:
