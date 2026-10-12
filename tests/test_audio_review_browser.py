@@ -72,11 +72,18 @@ class AudioReviewBrowserTests(unittest.TestCase):
     def setUp(self):
         data = json.loads(json.dumps(self.data))
         data['plan_hash'] = self.id()
-        page = self.folder / 'case.html'
+        # Each test gets its own file URL. Replacing one file repeatedly can
+        # reuse cached HTML/form state across unrelated Chrome navigations.
+        page = self.folder / (self._testMethodName + '.html')
         page.write_text(renderer.render_page(data, 'zh'), encoding='utf-8')
         self.browser.get(page.as_uri())
-        self.wait.until(lambda driver: driver.find_element(By.ID, 'text').get_attribute('value'))
+        self.wait_for_page()
         self.js('document.getElementById("player").muted=true;')
+
+    def wait_for_page(self):
+        self.wait.until(lambda driver: driver.execute_script('''
+          return document.readyState === 'complete'
+            && window.IMPACTAudioReview?.data.plan_hash === arguments[0];''', self.id()))
 
     def click(self, name):
         self.browser.find_element(By.ID, name).click()
@@ -123,8 +130,19 @@ class AudioReviewBrowserTests(unittest.TestCase):
             self.assertEqual(self.exported()['items'], [])
             self.assertTrue(self.browser.find_element(By.ID, 'validation').text)
         self.browser.execute_script('const node=document.getElementById("end");node.value="";node.dispatchEvent(new Event("input"));')
-        self.browser.refresh()
-        self.assertEqual(self.browser.find_element(By.ID, 'end').get_attribute('value'), '')
+        self.assertEqual(self.exported()['review_records'][0]['human_end_audio_s'], '')
+        self.assertEqual(self.js('''const api=window.IMPACTAudioReview;
+          const key='impact-review-'+api.data.language+'-'+api.data.plan_hash;
+          return JSON.parse(localStorage.getItem(key)).items.u0.human_end_audio_s;'''), '')
+        for _ in range(5):
+            self.browser.refresh()
+            self.wait_for_page()
+            details = self.js('''const api=window.IMPACTAudioReview;
+              const key='impact-review-'+api.data.language+'-'+api.data.plan_hash;
+              return {plan:api.data.plan_hash, field:document.getElementById('end').value,
+                record:api.exportReview().review_records[0], saved:JSON.parse(localStorage.getItem(key))};''')
+            self.assertEqual(details['record']['human_end_audio_s'], '', details)
+            self.assertEqual(details['field'], '', details)
 
     def test_changing_recording_cancels_old_clip(self):
         self.click('play')
