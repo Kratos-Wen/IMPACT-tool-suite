@@ -55,11 +55,15 @@ class FrameReviewMixin:
     def _automatic_box_import_mode(self):
         if getattr(self,'skip_auto_tracking_import',False) or os.environ.get('IMPACT_SKIP_AUTOMATIC_TRACKS')=='1':return 'none'
         value=getattr(self,'_box_import_override',None) or os.environ.get('IMPACT_AUTOMATIC_TRACKS') or PROFILE.get('automatic_tracking_import','all')
-        return value if value in ('all','hands','none') else 'all'
+        from core.box_import import constrained_import_mode
+        return constrained_import_mode(value,PROFILE)
 
     def _refresh_box_import_actions(self):
         mode=self._automatic_box_import_mode()
-        for value,action in getattr(self,'_box_import_actions',{}).items():action.setChecked(value==mode)
+        for value,action in getattr(self,'_box_import_actions',{}).items():
+            action.setChecked(value==mode)
+            from core.box_import import constrained_import_mode
+            action.setEnabled(constrained_import_mode(value,PROFILE)==value)
 
     def _bbox_frame_markers(self):
         hand=self._selected_hand_data() or {};s=hand.get('interaction_start');e=hand.get('interaction_end')

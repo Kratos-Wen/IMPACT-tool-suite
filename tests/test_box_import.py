@@ -29,3 +29,11 @@ manual=dict(box,source='manual_box_edit')
 rows,omitted=unique_hand_candidates([box,manual,object_box],normalize)
 assert manual in rows and object_box in rows and box not in rows and omitted==1
 print('SELECTIVE_IMPORT_MANUAL_PRESERVATION_CONFLICT_GATE_MARKER_STATES_PASS')
+
+from core.box_import import constrained_import_mode
+assert constrained_import_mode('all',{'automatic_tracking_import_limit':'hands'})=='hands'
+assert constrained_import_mode('none',{'automatic_tracking_import_limit':'hands'})=='none'
+assert not import_box({'source':'','frame':0},False,'hands',{'automatic':True})
+assert import_box({'source':'manual_sam_click','frame':0},False,'hands',{'automatic':True})
+assert import_box({'source':'manual_box_edit','frame':0},False,'hands',{'automatic':True})
+print('IMPORT_LIMIT_UNTAGGED_MACHINE_OBJECTS_HUMAN_SAM_ANCHORS_PASS')

@@ -18373,12 +18373,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         and str(box_class_id) not in self.class_map
                     ):
                         self.class_map[box_class_id] = label
-                if not import_box(entry,is_actor,automatic_import_mode,info):continue
+                import_context=dict(info)
+                if data.get('provenance',{}).get('machine_only'):import_context['automatic']=True
+                if not import_box(entry,is_actor,automatic_import_mode,import_context):continue
                 new_rb = {
                     "id": bid,
                     "orig_frame": f_idx - self.start_offset,
                     "label": label,
-                    "source": entry.get("source") or ("machine_candidate" if automatic(entry,info) else "loaded_annotation"),
+                    "source": entry.get("source") or ("machine_candidate" if automatic(entry,import_context) else "loaded_annotation"),
                     "human_verified": bool(entry.get("human_verified",False)),
                     "locked": bool(entry.get("locked")),
                     "x1": x1,

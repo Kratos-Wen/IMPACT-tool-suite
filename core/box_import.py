@@ -29,3 +29,11 @@ def unique_hand_candidates(boxes,normalize_hand):
         if len(valid)==1:kept.extend(valid.values());omitted+=len(rows)-1
         else:omitted+=len(rows)
     return kept,omitted
+
+
+def constrained_import_mode(value, profile):
+    value=value if value in ('all','hands','none') else 'all'
+    limit=profile.get('automatic_tracking_import_limit','all')
+    if limit=='none':return 'none'
+    if limit=='hands' and value=='all':return 'hands'
+    return value
