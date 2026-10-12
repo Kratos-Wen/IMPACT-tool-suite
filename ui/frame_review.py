@@ -63,7 +63,19 @@ class FrameReviewMixin:
         self._pause();self.player.seek(frame);self._refresh_boxes_for_frame(frame);self._set_frame_controls(frame)
 
     def _boxes_for_review(self,entity,frame):
-        return [b for b in self.raw_boxes if int(b.get('orig_frame',-1))+int(self.start_offset)==frame and
+        # Retain raw row references: verification writes human_verified on them.
+        # A rebuild, box edit, replacement or append invalidates this frame index.
+        rows=self.raw_boxes
+        key=(id(rows),len(rows),getattr(self,'_bbox_revision',0))
+        if getattr(self,'_review_boxes_index_key',None)!=key:
+            index={}
+            for box in rows:
+                index.setdefault(int(box.get('orig_frame',-1)),[]).append(box)
+            self._review_boxes_index=index
+            self._review_boxes_index_source=rows
+            self._review_boxes_index_key=key
+        candidates=self._review_boxes_index.get(int(frame)-int(self.start_offset),[])
+        return [b for b in candidates if
                 (self._normalize_hand_label(b.get('label'))==entity[2:] if entity.startswith('H:') else
                  not self._normalize_hand_label(b.get('label')) and str(b.get('id'))==entity[2:])]
 
@@ -168,7 +180,11 @@ class FrameReviewMixin:
         self.act_frame_review_status.setText(text)
         label=getattr(self,'lbl_frame_review_status',None)
         if label:
-            label.setText(text);label.setStyleSheet('color: '+('#15803d' if entities and done==len(entities) else '#a16207')+';')
+            label.setText(text)
+            color='#15803d' if entities and done==len(entities) else '#a16207'
+            if getattr(self,'_frame_review_status_color',None)!=color:
+                label.setStyleSheet('color: '+color+';')
+                self._frame_review_status_color=color
 
     def _clear_event_track(self,include_human):
         hand=self.event_draft.get(self.selected_hand_label,{})

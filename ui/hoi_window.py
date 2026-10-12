@@ -1095,6 +1095,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         self.player = VideoPlayer()
         self.player.on_frame_advanced = self._on_frame_advanced
+        self.player.on_navigation_committed = self._cancel_video_preview
         self.player.on_playback_state_changed = self._on_player_playback_state_changed
         self.player.on_click_frame = self._on_video_canvas_click
 
@@ -1215,6 +1216,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._query_calibration_dirty = True
         self._authority_policy_config = {"preset": "default"}
         self._slider_scrubbing = False
+        self._video_preview_pending = None
+        self._video_preview_timer = QTimer(self)
+        self._video_preview_timer.setSingleShot(True)
+        self._video_preview_timer.setInterval(40)
+        self._video_preview_timer.timeout.connect(self._show_pending_video_preview)
         self._dismissed_query_ids: Dict[str, int] = {}
         self._query_metrics = {
             "presented": 0,
@@ -12900,24 +12906,50 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
     def _on_hoi_timeline_hover(self, frame: int):
         if not self.player.cap:
             return
-        if getattr(self.player, "is_playing", False):
+        if getattr(self.player, "is_playing", False) or self._slider_scrubbing:
             return
         if frame is None or frame < 0:
+            self._cancel_video_preview()
             target = int(getattr(self.player, "current_frame", 0))
             try:
                 self.player.seek(target, preview_only=True)
             except Exception:
                 return
-            self._refresh_boxes_for_frame(target)
-            self._update_overlay(target)
+            self._refresh_boxes_for_frame(target, skip_events=True, lightweight=True)
             return
         try:
             target = max(self.player.crop_start, min(frame, self.player.crop_end))
         except Exception:
             target = int(frame)
-        self.player.seek(target, preview_only=True)
-        self._refresh_boxes_for_frame(target)
-        self._update_overlay(target)
+        self._queue_video_preview(target)
+
+    def _cancel_video_preview(self):
+        self._video_preview_pending = None
+        player = getattr(self, 'player', None)
+        if player is not None:
+            player._cancel_background_preview()
+        timer = getattr(self, '_video_preview_timer', None)
+        if timer is not None:
+            timer.stop()
+
+    def _queue_video_preview(self, frame, slider=False):
+        self._video_preview_pending = (int(frame), bool(slider))
+        if not self._video_preview_timer.isActive():
+            self._video_preview_timer.start()
+
+    def _show_pending_video_preview(self):
+        pending = self._video_preview_pending
+        self._video_preview_pending = None
+        if pending is None or not self.player.cap or self.player.is_playing:
+            return
+        frame, slider = pending
+        frame = max(self.player.crop_start, min(frame, self.player.crop_end))
+        self.player.request_preview(frame, lambda ready: self._on_video_preview_ready(ready, slider))
+
+    def _on_video_preview_ready(self, frame, slider=False):
+        self._refresh_boxes_for_frame(frame, skip_events=True, lightweight=True)
+        if slider and getattr(self, 'hoi_timeline', None):
+            self.hoi_timeline.set_current_frame(frame)
 
     def _on_hoi_meta_changed(self):
         self._sync_action_panel_selection()
@@ -13324,6 +13356,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
     # ---------- undo/redo ----------
     def _snapshot_state(self) -> dict:
         """Capture a deep copy of event + bbox state for undo/redo."""
+        from core.editor_snapshot import clone_boxes
         return {
             "frame_review": copy.deepcopy(getattr(self,"frame_review",{})),
             "shared_assembly": copy.deepcopy(self._assembly_data()),
@@ -13333,7 +13366,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             "event_draft": copy.deepcopy(self.event_draft),
             "selected_hand_label": self.selected_hand_label,
             "selected_event_id": self.selected_event_id,
-            "raw_boxes": copy.deepcopy(self.raw_boxes),
+            "raw_boxes": clone_boxes(self.raw_boxes),
             "suppressed_hand_boxes": list(getattr(self, "_suppressed_hand_boxes", [])),
             "box_id_counter": self.box_id_counter,
             "global_object_map": copy.deepcopy(self.global_object_map),
@@ -19619,15 +19652,13 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._log("hoi_jump_to_frame", target=frame)
 
     def _on_slider_pressed(self):
+        self._pause()
         self._slider_scrubbing = True
 
     def _on_slider_changed(self, val: int):
         if self.player.cap:
             if self._slider_scrubbing or self.slider.isSliderDown():
-                self.player.seek(val, preview_only=True)
-                self._refresh_boxes_for_frame(val, skip_events=True, lightweight=True)
-                if getattr(self, "hoi_timeline", None):
-                    self.hoi_timeline.set_current_frame(val)
+                self._queue_video_preview(val, slider=True)
                 return
             self.player.seek(val)
             self._refresh_boxes_for_frame(val)
@@ -19639,6 +19670,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if not self.player.cap:
             return
         self._slider_scrubbing = False
+        self._cancel_video_preview()
         val = int(self.slider.value())
         self.player.seek(val)
         self._refresh_boxes_for_frame(val)
@@ -20750,6 +20782,13 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._update_inline_event_editor()
 
     def _label_suggestions(self):
+        # Vocabulary changes on edits/imports, not on video frame advancement.
+        # Small registry tuples also catch in-place rename/configuration changes.
+        cache_key=(id(self.raw_boxes),len(self.raw_boxes),getattr(self,'_bbox_revision',0),
+                   tuple((a.get('id'),a.get('label'),a.get('short')) for a in self.actors_config),
+                   tuple(self.global_object_map.items()),tuple(self.class_map.items()))
+        if getattr(self,'_label_suggestions_key',None)==cache_key:
+            return list(self._label_suggestions_cache)
         suggestions = []
         for actor in list(getattr(self, "actors_config", []) or []):
             actor_id = str((actor or {}).get("id") or "").strip()
@@ -20776,7 +20815,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if item and key not in seen:
                 seen.add(key)
                 ordered.append(item)
-        return ordered
+        self._label_suggestions_key=cache_key
+        self._label_suggestions_cache=ordered
+        return list(ordered)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -20801,6 +20842,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return super().closeEvent(e)
 
     def _rebuild_bboxes_from_raw(self):
+        self._review_boxes_index_key=None
+        self._review_boxes_index={}
+        self._review_boxes_index_source=None
+        self._label_suggestions_key=None
         self.bboxes = {}
         for b in self.raw_boxes:
             target_frame = b.get("orig_frame", 0) + self.start_offset

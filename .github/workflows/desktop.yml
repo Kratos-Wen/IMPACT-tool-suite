@@ -25,6 +25,7 @@ jobs:
       - run: python tests/test_assembly_instances.py
       - run: python tests/test_review_assembly_instances.py
       - run: python tests/test_frame_review.py
+      - run: python tests/test_frame_review_navigation.py
       - run: python tests/test_correction_propagation.py
       - run: python tests/test_instance_edits.py
       - run: python tests/test_instance_registry_gui.py
@@ -36,6 +37,9 @@ jobs:
       - run: python tests/test_current_annotation.py
       - run: python tests/test_safe_storage.py
       - run: python tests/test_autosave_gui.py
+      - run: python tests/test_editor_snapshot.py
+      - run: python tests/test_editor_performance_gui.py
+      - run: python tests/test_video_preview_gui.py
       - run: python tests/test_save_guard_gui.py
       - run: python tests/test_offset_save_gui.py
       - run: python tests/test_label_guide_gui.py

@@ -1,4 +1,7 @@
 import cv2
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from core.video_preview import PreviewDecoder, read_frame, shutdown_preview
 from utils.ego_orientation_guard import check_ego_orientation
 from PyQt5.QtCore import Qt, QTimer, QRect
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont, QPen, QFontMetrics
@@ -49,6 +52,7 @@ class VideoPlayer(QLabel):
         self.timer.timeout.connect(self._on_timer)
         self.status_cb = status_cb  # func(str)
         self.on_playback_state_changed = None
+        self.on_navigation_committed = None
 
         # ---- audio player ----
         self.audio_player = QMediaPlayer(self)
@@ -67,6 +71,25 @@ class VideoPlayer(QLabel):
         self._last_frame_bgr = None
         self._frame_w = 0
         self._frame_h = 0
+        # Native frames only; coordinates and exported geometry remain exact.
+        self._decoded_frames = OrderedDict()
+        self._decoded_frame_bytes = 0
+        self._frame_cache_budget = 32 * 1024 * 1024
+        self._decoder_next_frame = None
+        self._displayed_frame = None
+        self._media_path = None
+        self._preview_decoder = PreviewDecoder()
+        self._preview_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='impact-preview')
+        self._preview_future = None
+        self._preview_pending = None
+        self._preview_request_id = 0
+        self._preview_context = None
+        self._preview_poll_timer = QTimer(self)
+        self._preview_poll_timer.setInterval(15)
+        self._preview_poll_timer.timeout.connect(self._drain_preview)
+        # The destruction hook captures backend objects only, never a Qt widget.
+        executor, decoder = self._preview_executor, self._preview_decoder
+        self.destroyed.connect(lambda *_: shutdown_preview(executor, decoder))
 
         # --- view transform: fit_scale x zoom + pan ---
         self._zoom = 1.0
@@ -157,6 +180,8 @@ class VideoPlayer(QLabel):
         if prepared is None:return False
         self.pause()
         if self.cap:self.cap.release()
+        self._clear_frame_cache()
+        self._media_path = path
         self.cap = prepared.pop('capture')
         self.frame_count = prepared['frames']
         fps = prepared['fps']
@@ -184,17 +209,15 @@ class VideoPlayer(QLabel):
         if not self.cap:
             return
         frame = max(self.crop_start, min(frame, self.crop_end))
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
-        ret, img = self.cap.read()
-        if not ret:
-            return
-        self._last_frame_bgr = img.copy()
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
-        self._last_qimage = qimg
-        self._frame_w, self._frame_h = w, h
-
+        if not preview_only:
+            self._cancel_background_preview()
+            if callable(self.on_navigation_committed):
+                self.on_navigation_committed()
+        if self._displayed_frame != frame:
+            img = self._read_native_frame(frame)
+            if img is None:
+                return
+            self._show_native_frame(img, frame)
         if not preview_only:
             self.current_frame = frame
         self._ensure_pan_clamped()
@@ -202,8 +225,107 @@ class VideoPlayer(QLabel):
         if not preview_only:
             self._sync_audio_to_current_frame()
 
+    def _clear_frame_cache(self):
+        self._decoded_frames.clear()
+        self._decoded_frame_bytes = 0
+        self._decoder_next_frame = None
+        self._displayed_frame = None
+
+    def _read_native_frame(self, frame):
+        """Reuse recent frames and the decoder cursor before seeking a GOP."""
+        cached = self._decoded_frames.pop(frame, None)
+        if cached is not None:
+            self._decoded_frames[frame] = cached
+            return cached
+        image, self._decoder_next_frame = read_frame(self.cap, self._decoder_next_frame, frame)
+        if image is None:
+            return None
+        self._cache_native_frame(frame, image)
+        return image
+
+    def _cache_native_frame(self, frame, image):
+        old = self._decoded_frames.pop(frame, None)
+        if old is not None:
+            self._decoded_frame_bytes -= old.nbytes
+        if image.nbytes <= self._frame_cache_budget:
+            self._decoded_frames[frame] = image
+            self._decoded_frame_bytes += image.nbytes
+            while self._decoded_frame_bytes > self._frame_cache_budget:
+                _, old = self._decoded_frames.popitem(last=False)
+                self._decoded_frame_bytes -= old.nbytes
+
+    def _cancel_background_preview(self):
+        self._preview_request_id += 1
+        self._preview_pending = None
+
+    def request_preview(self, frame, on_ready=None):
+        """Coalesce mouse previews; committed seeks keep their synchronous API."""
+        if not self.cap or self.is_playing:
+            return
+        frame = max(self.crop_start, min(int(frame), self.crop_end))
+        self._preview_request_id += 1
+        self._preview_pending = None
+        image = self._decoded_frames.get(frame)
+        if image is not None:
+            self._decoded_frames.move_to_end(frame)
+            self._show_native_frame(image, frame)
+            self._ensure_pan_clamped()
+            self.update()
+            if callable(on_ready):
+                on_ready(frame)
+            return
+        if not self._media_path:
+            return
+        self._preview_pending = (self._media_path, frame, self._preview_request_id, on_ready)
+        self._start_pending_preview()
+
+    def _start_pending_preview(self):
+        if self._preview_future is not None or self._preview_pending is None:
+            return
+        self._preview_context = self._preview_pending
+        self._preview_pending = None
+        path, frame, _, _ = self._preview_context
+        self._preview_future = self._preview_executor.submit(self._preview_decoder.decode, path, frame)
+        self._preview_poll_timer.start()
+
+    def _drain_preview(self):
+        future = self._preview_future
+        if future is not None and future.done():
+            path, frame, request_id, callback = self._preview_context
+            self._preview_future = None
+            self._preview_context = None
+            accepted = (request_id == self._preview_request_id and path == self._media_path
+                        and self.cap is not None and not self.is_playing)
+            try:
+                image = future.result()
+            except Exception as exc:
+                if accepted:
+                    self._status('Preview unavailable: ' + str(exc))
+            else:
+                if accepted:
+                    self._cache_native_frame(frame, image)
+                    self._show_native_frame(image, frame)
+                    self._ensure_pan_clamped()
+                    self.update()
+                    if callable(callback):
+                        callback(frame)
+            self._start_pending_preview()
+        if self._preview_future is None and self._preview_pending is None:
+            self._preview_poll_timer.stop()
+
+    def _show_native_frame(self, img, frame):
+        self._last_frame_bgr = img
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        h, w, ch = rgb.shape
+        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
+        self._last_qimage = qimg
+        self._frame_w, self._frame_h = w, h
+        self._displayed_frame = frame
+
     def play(self):
         if self.cap and not self.is_playing:
+            # A hover preview must never advance the committed video cursor.
+            self.seek(self.current_frame)
             self.is_playing = True
             self._start_timer()
             if (
@@ -281,18 +403,13 @@ class VideoPlayer(QLabel):
         if self.current_frame >= self.crop_end:
             self.stop()
             return
-        ret, frame = self.cap.read()
-        if not ret:
+        next_frame = self.current_frame + 1
+        frame = self._read_native_frame(next_frame)
+        if frame is None:
             self.stop()
             return
-        self.current_frame += 1
-        self._last_frame_bgr = frame.copy()
-
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        h, w, ch = rgb.shape
-        qimg = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888).copy()
-        self._last_qimage = qimg
-        self._frame_w, self._frame_h = w, h
+        self.current_frame = next_frame
+        self._show_native_frame(frame, next_frame)
         self._ensure_pan_clamped()
         self.update()
 
@@ -350,6 +467,15 @@ class VideoPlayer(QLabel):
             except Exception:
                 pass
         self.cap = None
+        self._cancel_background_preview()
+        self._media_path = None
+        try:
+            self._preview_executor.submit(self._preview_decoder.close)
+        except RuntimeError:
+            pass
+        if callable(self.on_navigation_committed):
+            self.on_navigation_committed()
+        self._clear_frame_cache()
         self.frame_count = 0
         self.current_frame = 0
         self.crop_start = 0
