@@ -2,7 +2,10 @@
 import copy
 from PyQt5.QtCore import Qt,QTimer
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QMessageBox,QShortcut,QInputDialog
+from PyQt5.QtWidgets import QMessageBox,QShortcut,QInputDialog,QActionGroup
+from bisect import bisect_left,bisect_right
+from core.bbox_markers import BoxIndex,state as marker_state
+import os
 from core.frame_review import signature,valid_record,missing_frames,box_observed
 from core.project_profile import PROFILE
 from core.anomaly_attributes import export_review
@@ -38,8 +41,54 @@ class FrameReviewMixin:
         menu.addSeparator()
         menu.addAction('Clear automatic track in this event...',lambda:self._clear_event_track(False))
         menu.addAction('Clear all boxes in this event...',lambda:self._clear_event_track(True))
-        action=menu.addAction('Skip automatic boxes on import');action.setCheckable(True)
-        action.toggled.connect(lambda on:setattr(self,'skip_auto_tracking_import',on))
+        choices=menu.addMenu('Automatic boxes on next import')
+        group=QActionGroup(self);group.setExclusive(True);self._box_import_actions={}
+        for label,value in [('All machine boxes','all'),('Hands only','hands'),('No machine boxes','none')]:
+            act=choices.addAction(label);act.setCheckable(True);group.addAction(act)
+            act.setChecked(value==self._automatic_box_import_mode())
+            act.triggered.connect(lambda checked,v=value:setattr(self,'_box_import_override',v) if checked else None)
+            self._box_import_actions[value]=act
+        for label,key,sid,direction in [('Previous frame with boxes','Alt+,','hoi.prev_bbox_frame',-1),('Next frame with boxes','Alt+.','hoi.next_bbox_frame',1)]:
+            action=menu.addAction(label,lambda checked=False,d=direction:self._jump_bbox_direction(d));action.setShortcut(QKeySequence(key))
+            self._frame_review_actions[sid]=(action,key)
+
+    def _automatic_box_import_mode(self):
+        if getattr(self,'skip_auto_tracking_import',False) or os.environ.get('IMPACT_SKIP_AUTOMATIC_TRACKS')=='1':return 'none'
+        value=getattr(self,'_box_import_override',None) or os.environ.get('IMPACT_AUTOMATIC_TRACKS') or PROFILE.get('automatic_tracking_import','all')
+        return value if value in ('all','hands','none') else 'all'
+
+    def _refresh_box_import_actions(self):
+        mode=self._automatic_box_import_mode()
+        for value,action in getattr(self,'_box_import_actions',{}).items():action.setChecked(value==mode)
+
+    def _bbox_frame_markers(self):
+        hand=self._selected_hand_data() or {};s=hand.get('interaction_start');e=hand.get('interaction_end')
+        if type(s) is not int or type(e) is not int or not self.selected_hand_label:return []
+        rows=self.raw_boxes;revision=(id(rows),len(rows),getattr(self,'_bbox_revision',0))
+        if getattr(self,'_bbox_mark_index_key',None)!=revision:
+            self._bbox_mark_index=BoxIndex(rows,self._normalize_hand_label);self._bbox_mark_index_key=revision
+        records=getattr(self,'frame_review',{})
+        key=(revision,id(records),getattr(self,'_query_state_revision',0),self.selected_event_id,self.selected_hand_label,s,e,self.start_offset)
+        if getattr(self,'_bbox_mark_cache_key',None)==key:return self._bbox_mark_cache
+        index=self._bbox_mark_index;offset=int(self.start_offset);markers=[]
+        for raw_frame in index.frames[bisect_left(index.frames,s-offset):bisect_right(index.frames,e-offset)]:
+            frame=raw_frame+offset;entities=self._review_entities(hand,self.selected_hand_label,frame)
+            instrument=self._hand_instrument_object_id(hand)
+            for entity in entities:
+                boxes=index.by_frame[raw_frame].get(entity,[])
+                if not boxes:continue
+                role='H' if entity.startswith('H:') else 'I' if entity=='O:'+str(instrument) else 'O'
+                markers.append(dict(frame=frame,role=role,entity=entity,state=marker_state(boxes,records.get(str(frame),{}).get(entity))))
+        self._bbox_mark_cache_key=key;self._bbox_mark_cache=markers;return markers
+
+    def _jump_bbox_frame(self,frame):
+        self._pause();self.player.seek(int(frame));self._refresh_boxes_for_frame(int(frame));self._set_frame_controls(int(frame))
+        self.hoi_timeline.set_current_frame(int(frame))
+
+    def _jump_bbox_direction(self,direction):
+        frames=sorted({row['frame'] for row in self._bbox_frame_markers()})
+        options=[f for f in frames if (f-int(self.player.current_frame))*direction>0]
+        if options:self._jump_bbox_frame(options[0] if direction>0 else options[-1])
 
     def _review_entities(self,hand,key,frame):
         entities=['H:'+key]

@@ -2019,6 +2019,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             get_fps=lambda: int(self.player.frame_rate or 30),
             get_title_for_hand=self._hoi_title_for_hand,
             actors_config=self.actors_config,
+            get_box_markers=self._bbox_frame_markers,
+            on_box_marker=self._jump_bbox_frame,
             parent=self,
         )
         self.lbl_incomplete = QLabel("Incomplete: n/a")
@@ -10323,6 +10325,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if not isinstance(profile_data, dict):
             raise ValueError("Invalid task project profile")
         activate_project_profile(profile)
+        self._refresh_box_import_actions()
         _DEFAULT_ANOMALY_LABEL = 'normal'
         _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
         _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
@@ -18131,7 +18134,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             try:
                 if not os.path.isfile(entry):
                     raise FileNotFoundError("Install the complete preannotation review update")
-                subprocess.Popen([sys.executable, entry, os.path.abspath(fp)],env=dict(os.environ,IMPACT_SKIP_AUTOMATIC_TRACKS="1" if getattr(self,"skip_auto_tracking_import",False) else "0"))
+                subprocess.Popen([sys.executable, entry, os.path.abspath(fp)],env=dict(os.environ,IMPACT_SKIP_AUTOMATIC_TRACKS="1" if getattr(self,"skip_auto_tracking_import",False) else "0",IMPACT_AUTOMATIC_TRACKS=self._automatic_box_import_mode()))
             except Exception as ex:
                 QMessageBox.warning(self, "Preannotation review", str(ex))
             return
@@ -18308,6 +18311,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         # Tracks -> raw boxes
         tracks = data.get("tracks", {})
         track_obj_id = {}
+        from core.box_import import import_box,unique_hand_candidates,automatic
+        automatic_import_mode=self._automatic_box_import_mode()
 
         def _label_for_id(uid):
             for name, id_val in self.global_object_map.items():
@@ -18368,12 +18373,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         and str(box_class_id) not in self.class_map
                     ):
                         self.class_map[box_class_id] = label
-                if getattr(self,"skip_auto_tracking_import",False) and not (entry.get("human_verified") or entry.get("locked") or str(entry.get("source","")).startswith(("manual","human"))):continue
+                if not import_box(entry,is_actor,automatic_import_mode,info):continue
                 new_rb = {
                     "id": bid,
                     "orig_frame": f_idx - self.start_offset,
                     "label": label,
-                    "source": entry.get("source","loaded_annotation"),
+                    "source": entry.get("source") or ("machine_candidate" if automatic(entry,info) else "loaded_annotation"),
                     "human_verified": bool(entry.get("human_verified",False)),
                     "locked": bool(entry.get("locked")),
                     "x1": x1,
@@ -18385,6 +18390,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     new_rb["class_id"] = box_class_id
                 self.raw_boxes.append(new_rb)
 
+        if automatic_import_mode=='hands':
+            self.raw_boxes,self._omitted_machine_hand_boxes=unique_hand_candidates(self.raw_boxes,self._normalize_hand_label)
         self._rebuild_bboxes_from_raw()
         self._refresh_boxes_for_frame(self.player.current_frame)
 

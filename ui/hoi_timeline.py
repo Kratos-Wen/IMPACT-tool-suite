@@ -454,6 +454,8 @@ class HOITimeline(QWidget):
         get_title_for_hand: Optional[Callable[[str], str]] = None,
         actors_config: List[Dict] = None,
         parent=None,
+        get_box_markers=None,
+        on_box_marker=None,
     ):
         super().__init__(parent)
         self._get_segments = get_segments_for_hand
@@ -495,6 +497,13 @@ class HOITimeline(QWidget):
         self._build_rows()
         
         layout.addWidget(self.rows_frame)
+        self.box_strip=None
+        if get_box_markers is not None and on_box_marker is not None:
+            from ui.bbox_frame_strip import BBoxFrameStrip
+            self.box_strip=BBoxFrameStrip(self,get_box_markers,on_box_marker)
+            layout.addWidget(self.box_strip)
+            legend=QLabel('Boxes: blue = drawn/edited · green = viewed · gray = model · amber = conflict')
+            legend.setStyleSheet('color: #64748b;');layout.addWidget(legend)
 
         controls = QHBoxLayout()
         controls.setContentsMargins(0, 0, 0, 0)
@@ -576,6 +585,7 @@ class HOITimeline(QWidget):
         self._user_span_override=True
         self._init_sliders()
         for row in self.actor_rows.values():row.update()
+        if self.box_strip:self.box_strip.update()
 
     def _wheel_navigation(self,event,row=None):
         modifiers=event.modifiers()
@@ -702,12 +712,14 @@ class HOITimeline(QWidget):
         self.slider_view.blockSignals(False)
         for row in self.actor_rows.values():
             row.update()
+        if self.box_strip:self.box_strip.update()
         self._update_view_summary()
 
     def _on_view_start_changed(self, v: int):
         self._view_start = int(v)
         for row in self.actor_rows.values():
             row.update()
+        if self.box_strip:self.box_strip.update()
         self._update_view_summary()
 
     def _on_view_span_changed(self, val: int):
@@ -741,13 +753,16 @@ class HOITimeline(QWidget):
         self._selected_hand = hand_key
         for aid, row in self.actor_rows.items():
             row.set_selected(event_id if hand_key == aid else None)
+        if self.box_strip:self.box_strip.update()
 
     def set_current_frame(self, frame: int, follow: bool = True):
         if follow:
             self._ensure_visible(frame)
         for row in self.actor_rows.values():
             row.set_current_frame(frame)
+        if self.box_strip:self.box_strip.set_current_frame(frame)
 
     def refresh(self):
         for row in self.actor_rows.values():
             row.update()
+        if self.box_strip:self.box_strip.update()
