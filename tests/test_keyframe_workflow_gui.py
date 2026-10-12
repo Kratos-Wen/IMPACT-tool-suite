@@ -1,4 +1,4 @@
-"""SOE workflow, implicit box visits, six-type anomaly UI and shared boundaries."""
+"""SOE workflow, implicit box visits, six-type anomaly UI and closed event intervals."""
 import copy,os,sys,time
 from pathlib import Path
 from unittest.mock import patch
@@ -118,19 +118,22 @@ for _ in range(10):w._load_annotations_v2(w._build_payload_v2())
 assert w._build_payload_v2()['provenance']['video_local_instances']==mapping
 assert set(w._build_payload_v2()['object_library'])==set(saved['object_library'])
 assert all('_1' not in row['label'] for row in w._build_payload_v2()['object_library'].values())
-# Event intervals and timeline hit testing agree on a shared boundary frame.
-assert not interiors_overlap(0,65,65,100) and interiors_overlap(0,65,64,100)
+# Closed event intervals reject shared boundary frames without affecting SOE coincidence.
+assert interiors_overlap(0,65,65,100) and not interiors_overlap(0,65,66,100)
+assert interiors_overlap(65,65,65,100) and interiors_overlap(0,100,65,65)
+assert not interiors_overlap(0,65,66,66)
 row=w.hoi_timeline.actor_rows['Left_hand']
 original=row._get_segments
 row._get_segments=lambda:[dict(event_id=1,start=0,end=65,onset=0,verb='hold'),dict(event_id=2,start=65,end=100,onset=65,verb='place')]
-assert not row._overlaps(65,100,2) and row._overlaps(64,100,2)
+assert row._overlaps(65,100,2) and not row._overlaps(66,100,2)
 row.set_selected(2);assert row._segment_at(65)['event_id']==2
 assert row._hit_segment(row.frame_to_x(65),30)[0]['event_id']==2
 row._get_segments=original
-second=w._on_hoi_timeline_create('Left_hand',14,30,14);assert second is not None
+assert w._on_hoi_timeline_create('Left_hand',14,30,14) is None
+second=w._on_hoi_timeline_create('Left_hand',15,30,15);assert second is not None
 assert w._on_hoi_timeline_create('Left_hand',13,25,13) is None
-w._on_hoi_timeline_update(second,'Left_hand',14,31,14)
-assert w._find_event_by_id(second)['hoi_data']['Left_hand']['interaction_start']==14
+w._on_hoi_timeline_update(second,'Left_hand',15,31,15)
+assert w._find_event_by_id(second)['hoi_data']['Left_hand']['interaction_start']==15
 # Directly accessible assembly creation is cancellable and has no ID side effects.
 before=(copy.deepcopy(w.shared_assembly),copy.deepcopy(w.global_object_map),w.object_id_counter)
 def inspect_assembly():
@@ -145,4 +148,4 @@ with patch('app.sys.platform','darwin'):
     w._set_ui_scale(.85);assert w._preferred_base_font_pt()>=10.5
     w._set_ui_scale(1.2);assert w._preferred_base_font_pt()>=13.2-1e-6
 w.hide();w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.player.release_media();w.deleteLater();app.processEvents()
-print('SIX_ANOMALIES_NORMAL_SOE_IMPLICIT_VISITS_MANUAL_BOXES_SHARED_BOUNDARIES_LOCAL_IDS_ASSEMBLY_ENTRY_MAC_FONT_PASS')
+print('SIX_ANOMALIES_NORMAL_SOE_IMPLICIT_VISITS_MANUAL_BOXES_CLOSED_INTERVALS_LOCAL_IDS_ASSEMBLY_ENTRY_MAC_FONT_PASS')

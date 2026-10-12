@@ -12704,7 +12704,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         onset_changed = prev_onset.get("value") != new_onset
         end_changed = prev_end.get("value") != new_end
         if self._interval_conflict(hand_key,new_start,new_end,event_id) is not None:
-            QMessageBox.warning(self,'Event boundaries','Events for one hand may share a boundary frame, but their interiors cannot overlap.');return
+            QMessageBox.warning(self,'Event boundaries','Events for the same hand cannot share frames. Start the next event after the previous end frame.');return
         if not (start_changed or onset_changed or end_changed):
             if self.selected_event_id == event_id:
                 self.event_draft[hand_key] = copy.deepcopy(h)
@@ -12813,7 +12813,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             onset,
         )
         if self._interval_conflict(hand_key,new_start,new_end) is not None:
-            QMessageBox.warning(self,'Event boundaries','Events for one hand may share a boundary frame, but their interiors cannot overlap.');return None
+            QMessageBox.warning(self,'Event boundaries','Events for the same hand cannot share frames. Start the next event after the previous end frame.');return None
         self._push_undo()
         new_event = {
             "event_id": self.event_id_counter,
