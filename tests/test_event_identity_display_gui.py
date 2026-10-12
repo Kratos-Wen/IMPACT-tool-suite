@@ -31,6 +31,9 @@ w.player.current_frame=25;w._set_selected_event(hold['event_id'],'Left_hand')
 def draw(label,frame=25,role='noun'):
     w.player.current_frame=frame;w._pending_draw_box_role=role
     w._on_box_edited(None,dict(label=label,frame=frame,_action='add',x1=12,y1=10,x2=33,y2=35))
+QInputDialog.getItem=lambda parent,title,text,options,*args:(options[0],True)
+assert w._get_auto_draw_label()==('Left_hand',None)
+assert w._pending_draw_box_role=='hand' and w.rad_draw_target.isChecked()
 draw('Left_hand',role='hand')
 choices=[]
 def reuse(parent,title,text,options,*args):
@@ -41,6 +44,8 @@ assert w._get_auto_draw_label() is None
 draw('assembly')
 assert choices[-1]==['Use existing [55] assembly','Create a new assembly instance']
 assert w._hand_noun_object_id(w.event_draft['Left_hand'])==55
+assert w.rad_draw_inst.isChecked()
+assert w._hand_instrument_object_id(w.event_draft['Left_hand']) is None
 assert w.object_id_counter==56
 box=next(b for b in w.raw_boxes if b['orig_frame']==25 and b['id']==55)
 assert w._event_box_visible(box)
@@ -48,6 +53,19 @@ saved=copy.deepcopy(w.raw_boxes)
 w._hoi_undo();assert not any(b['orig_frame']==25 and b['id']==55 for b in w.raw_boxes)
 w._hoi_redo();assert w.raw_boxes==saved
 assert w._hand_noun_object_id(w.event_draft['Left_hand'])==55
+# The next box uses the instrument role without rebinding the noun.
+w.rad_draw_inst.setChecked(True)
+assert w._get_auto_draw_label() is None
+assert w._pending_draw_box_role=='instrument'
+draw('tool',role=w._pending_draw_box_role)
+assert w._hand_instrument_object_id(w.event_draft['Left_hand'])==8
+assert w._hand_noun_object_id(w.event_draft['Left_hand'])==55
+assert w.rad_draw_inst.isChecked()
+w.rad_draw_none.setChecked(True)
+draw('[55] assembly',frame=24,role=None)
+assert w.rad_draw_none.isChecked()
+w._hoi_undo();w._hoi_undo()
+assert w._hand_instrument_object_id(w.event_draft['Left_hand']) is None
 # Same selected instance on subsequent frames must never prompt or allocate another ID.
 QInputDialog.getItem=lambda *a,**k:(_ for _ in ()).throw(AssertionError('Unexpected instance prompt'))
 draw('assembly',frame=26)

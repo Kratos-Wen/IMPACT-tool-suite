@@ -154,7 +154,11 @@ class FrameReviewMixin:
         frame=int(self.player.current_frame)
         after=[i for i in issues if i['frame']>frame] if direction>0 else [i for i in issues if i['frame']<frame]
         issue=(after[0] if direction>0 else after[-1]) if after else (issues[0] if direction>0 else issues[-1])
-        self._set_selected_event(issue['event_id'],issue['hand']);self.player.seek(issue['frame']);self._set_frame_controls(issue['frame'])
+        self._pause()
+        self._set_selected_event(issue['event_id'],issue['hand'])
+        self.player.seek(issue['frame'])
+        self._refresh_boxes_for_frame(issue['frame'])
+        self._set_frame_controls(issue['frame'])
 
     def _refresh_frame_review_status(self):
         if not getattr(self,'act_frame_review_status',None):return

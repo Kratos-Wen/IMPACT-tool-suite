@@ -20198,6 +20198,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             object_role=role,
             object_id=object_id,
         )
+        if role == "noun" and getattr(self, "rad_draw_inst", None) is not None:
+            self.rad_draw_inst.setChecked(True)
 
     def _select_hand(self, hand_label: str, on: bool):
         """[Step 2] Switch hand context: save old data -> switch -> load new data."""
