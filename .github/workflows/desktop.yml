@@ -76,6 +76,7 @@ jobs:
       - run: python tests/test_editor_interactions_gui.py
       - run: python tests/test_event_identity_display_gui.py
       - run: python tests/test_event_object_scope_gui.py
+      - run: python tests/test_model_nouns_gui.py
       - run: python tests/test_batch_correction_gui.py
       - run: python tests/test_tracking_jobs.py
       - run: python tests/test_background_tracking_gui.py

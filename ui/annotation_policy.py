@@ -87,7 +87,7 @@ class AnnotationPolicyMixin:
         if target is not None and not hand.get('shared_assembly_ref'):
             categories={self._norm_category(name) for name,uid in self.global_object_map.items() if uid==target}
             if 'assembly' in categories:missing.append('assembly composition')
-        model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
+        model=model_from_trial(self._noun_model_trial())
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         review=export_review(hand.get('anomaly_label'),PROFILE)
         if review['anomaly_labels']:
@@ -106,10 +106,10 @@ class AnnotationPolicyMixin:
                 if any(x and forbidden.intersection(x.get('components',[])) for x in states):missing.append('model-incompatible composition')
                 nouns={noun_at(self._assembly_data(),f,uid) for f in times if uid is not None}
                 if len(nouns)>1:missing.append('noun changes inside event; split at the change')
-        model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
+        model=model_from_trial(self._noun_model_trial())
         forbidden=set((PROFILE.get('model_component_rules',{}).get(model,{}) or {}).get('forbidden_components',[]))
         for uid in (self._hand_noun_object_id(hand),self._hand_instrument_object_id(hand)):
-            if uid is not None and any(self._canonical_label_name(name).rsplit('_',1)[0] in forbidden or self._canonical_label_name(name) in forbidden for name,value in self.global_object_map.items() if value==uid):missing.append('model-incompatible component')
+            if uid is not None and not self._noun_instance_model_allowed(uid):missing.append('model-incompatible component')
         return list(dict.fromkeys(missing))
 
     def _policy_review_issues(self):

@@ -101,7 +101,7 @@ class AssemblyEditorMixin:
             for col,key in ((1,'1'),(2,'2'))} for row,spec in enumerate(self._assembly_specs())}
 
     def _assembly_validate_components(self,components,interfaces):
-        model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
+        model=model_from_trial(self._noun_model_trial())
         forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
         if forbidden.intersection(components):raise ValueError('Selected component is unavailable for this model.')
         for spec in self._assembly_specs():
@@ -163,7 +163,7 @@ class AssemblyEditorMixin:
         status=QLabel();layout.addWidget(status)
         layout.addWidget(QLabel('Check all components currently connected in this instance. Multiple selections are allowed.'))
         names=set(PROFILE.get('assembly_components',[]))|{x for s in data.get('states',[]) for x in s['components']};names.discard('assembly')
-        model=model_from_trial(getattr(self,'_task_trial_id','')+' '+str(self.video_path))
+        model=model_from_trial(self._noun_model_trial())
         forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
         parts=QListWidget();parts.setObjectName('assemblyComponents');layout.addWidget(parts)
         for name in sorted(x for x in names if isinstance(x,str) and x and x.lower().replace(' ','_') not in {'hand','left_hand','right_hand'}):

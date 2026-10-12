@@ -41,6 +41,8 @@ Task edits are saved to a hidden recovery folder every two seconds, including un
 
 The **Noun and Verb Guide** in the file menu reads explanations from your project profile. Selector tooltips show the same definitions; the guide supports search and English/Chinese text supplied by the project. Added labels remain visible and require an agreed project definition.
 
+Project profiles can restrict noun choices by the video's model. Incompatible options are disabled. Imported conflicts retain their IDs and geometry and appear in the completion checks for correction. Confirmed class aliases apply on import and save.
+
 **Assembly composition** in the file menu edits one object ID at a time. Multiple instances can have different compositions at the same frame. Hands referencing the same ID share that instance's state. **Merge assemblies** records a completed connection: choose the inserted instance, the receiving ID and the connection frame, then correct the receiving instance's whole-object box. Its correction propagation stays inside the current composition interval. The inserted track ends at the merge; event geometry links follow the receiving track. Composition changes and merges support undo, recovery and save/load.
 
 The next launch reopens the previous local project and playback position. Task manifests load matching assets and prefer `reviewed.json`; newer recovery drafts still offer a restore prompt. Missing files produce a relocation message. Set `IMPACT_RESTORE_LAST_PROJECT=0` to start with an empty editor.

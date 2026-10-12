@@ -4015,6 +4015,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             normalized_current_noun = int(current_noun) if current_noun is not None else None
         except Exception:
             normalized_current_noun = current_noun
+        if normalized_object_id != normalized_current_noun and not self._noun_instance_model_allowed(normalized_object_id):
+            QMessageBox.warning(self, 'Model-specific noun', 'This item is unavailable for the current model. Choose its actual category.')
+            self._load_hand_draft_to_ui(self.selected_hand_label)
+            return
         noun_state = get_field_state(hand_data, "noun_object_id") if isinstance(hand_data, dict) else {}
         noun_confirmed = str(noun_state.get("status") or "").strip().lower() == "confirmed"
         noun_source_fields = self._flatten_noun_source_decision_fields(
@@ -6006,6 +6010,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 self.combo_inline_instrument.setEditText("")
             self.combo_inline_instrument.blockSignals(False)
             self.combo_inline_instrument.setEnabled(True)
+            self._refresh_model_noun_choices()
 
             self._populate_anomaly_combo(self.combo_inline_anomaly, anomaly_value)
             self.combo_inline_anomaly.setEnabled(True)
@@ -12997,6 +13002,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             getattr(getattr(self, "combo_anomaly", None), "currentText", lambda: "")()
         )
         prev_anomaly = self._normalize_anomaly_label(prev.get("anomaly_label"))
+        if any(new != old and not self._noun_instance_model_allowed(new)
+               for new,old in ((current_ui_noun,prev_noun),(current_ui_instrument,prev_instrument))):
+            QMessageBox.warning(self, 'Model-specific noun', 'This item is unavailable for the current model. Choose its actual category.')
+            self._load_hand_draft_to_ui(self.selected_hand_label)
+            return
         should_push_undo = bool(
             current_ui_verb != str(prev.get("verb") or "").strip()
             or current_ui_noun != prev_noun
@@ -18172,6 +18182,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         data = adapt_annotation(data, _PROJECT_PROFILE)
         from core.local_instances import localize_instances
         data = localize_instances(data, _PROJECT_PROFILE)
+        self._annotation_trial_id = str(data.get('video_id') or '')
         self._annotation_provenance = copy.deepcopy(data.get('provenance', {}))
         if archive:self._annotation_provenance['original_archive'] = archive
         data = normalize_noun_aliases(data)
@@ -20561,6 +20572,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         """Require an explicit choice before a class name creates another instance."""
         from core.instance_category import instance_category
         category=instance_category(label,_PROJECT_PROFILE,self.class_map.values())
+        from core.noun_model_rules import noun_allowed
+        if not noun_allowed(category,self._noun_model_trial(),_PROJECT_PROFILE):
+            QMessageBox.warning(self, 'Model-specific noun', 'This item is unavailable for the current model. Choose its actual category.')
+            return None
         candidates=[]
         for name,uid in self.global_object_map.items():
             base=self.id_to_category.get(name,name)
@@ -20761,6 +20776,28 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         from core.instance_category import instance_category
         return instance_category(self.id_to_category.get(name,name),_PROJECT_PROFILE,self.class_map.values())
 
+    def _noun_model_trial(self):
+        return str(getattr(self, '_task_trial_id', '') or getattr(self, '_annotation_trial_id', '') or getattr(self,'video_path',''))
+
+    def _noun_instance_model_allowed(self, uid):
+        if uid is None:return True
+        from core.noun_model_rules import noun_allowed
+        return all(noun_allowed(self.id_to_category.get(name,name), self._noun_model_trial(), _PROJECT_PROFILE)
+                   for name,value in self.global_object_map.items() if value==uid)
+
+    def _refresh_model_noun_choices(self):
+        for name in ('combo_target','combo_instrument','combo_inline_noun','combo_inline_instrument'):
+            combo=getattr(self,name,None)
+            if combo is None:continue
+            model=combo.model()
+            if not hasattr(model,'item'):continue
+            for index in range(combo.count()):
+                item=model.item(index)
+                if item is None:continue
+                allowed=self._noun_instance_model_allowed(combo.itemData(index))
+                item.setEnabled(allowed)
+                if not allowed:item.setToolTip('Unavailable for this model. Correct any imported reference before completion.')
+
     def _object_label_is_selectable(self, label):
         category = re.sub(r"_\d+$", "", str(label or "").strip())
         return category.casefold() != 'hand' and not self._normalize_hand_label(category)
@@ -20791,6 +20828,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             inst_combo.addItem(display_text, uid)
         decorate_combo(self.combo_target, "noun", self.global_object_map)
         decorate_combo(inst_combo, "noun", self.global_object_map)
+        self._refresh_model_noun_choices()
         if uid >= self.object_id_counter:
             self.object_id_counter = uid + 1
 
@@ -20826,6 +20864,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     combo.setEditText("")
             finally:
                 combo.blockSignals(was_blocked)
+        self._refresh_model_noun_choices()
         self._update_inline_event_editor()
 
     def _label_suggestions(self):
