@@ -3,6 +3,7 @@ import copy
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -11,6 +12,7 @@ _bootstrap_qt_runtime()
 import cv2
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import QTimer
 from PyQt5.QtTest import QTest
 from ui.hoi_window import HOIWindow
 from ui.video_player import VideoPlayer
@@ -18,6 +20,20 @@ from ui.video_player import VideoPlayer
 app = QApplication([])
 for name in ('information', 'warning', 'critical', 'question'):
     setattr(QMessageBox, name, lambda *a, **k: QMessageBox.No)
+
+
+def wait_until(condition, milliseconds=3000):
+    start = time.monotonic()
+    while not condition() and (time.monotonic() - start) * 1000 < milliseconds:
+        QTest.qWait(10)
+    assert condition(), 'Timed out waiting for Qt preview processing'
+
+
+def drain_events():
+    # Confirm a later Qt timer actually ran before checking cancelled work.
+    done = []
+    QTimer.singleShot(100, lambda: done.append(True))
+    wait_until(lambda: done)
 
 
 class Capture:
@@ -133,15 +149,15 @@ reads = capture.reads
 for frame in range(1, 71):
     w._on_hoi_timeline_hover(frame)
 assert capture.reads == reads
-QTest.qWait(70)
+wait_until(lambda: player._displayed_frame == 70)
 assert capture.reads == reads and preview_calls == [70] and player._displayed_frame == 70 and player.current_frame == 0
 w._on_hoi_timeline_hover(40)
 w._on_hoi_timeline_hover(-1)
-QTest.qWait(70)
+drain_events()
 assert player._displayed_frame == 0 and player.current_frame == 0
 w._on_hoi_timeline_hover(30)
 player.seek(90)
-QTest.qWait(70)
+drain_events()
 assert player._displayed_frame == 90 and player.current_frame == 90
 # Release commits the precise slider frame and clears any delayed preview.
 w._refresh_events = lambda *a, **k: None
@@ -155,7 +171,7 @@ w.slider.blockSignals(True)
 w.slider.setValue(80)
 w.slider.blockSignals(False)
 w._on_slider_released()
-QTest.qWait(70)
+drain_events()
 assert player.current_frame == player._displayed_frame == 80
 player.release_media()
 assert not player._decoded_frames and player._decoded_frame_bytes == 0
