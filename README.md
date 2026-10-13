@@ -43,6 +43,10 @@ The **Noun and Verb Guide** in the file menu reads explanations from your projec
 
 Project profiles can restrict noun choices by the video's model. Incompatible options are disabled. Imported conflicts retain their IDs and geometry and appear in the completion checks for correction. Confirmed class aliases apply on import and save.
 
+Set `instrument_classes` in a project profile to restrict Instrument selectors to tools. Tools remain available as Object for actions such as pickup. An invalid imported Instrument remains marked for correction; refreshing a selector does not erase it. Set `compact_import_ids: true` to number sparse Object IDs consecutively on first import. Saved local IDs remain stable, and hand detector IDs do not consume Object numbers.
+
+To import just the hands from an annotation JSON, open the video, then use **File → Import → Hands from preannotation JSON…**. This preserves existing events, Object IDs, manual boxes and deleted-hand records. Conflicting hand candidates are omitted rather than assigned a guessed identity. **HOI Annotations…** imports the complete annotation project.
+
 **Assembly composition** in the file menu edits one object ID at a time. Multiple instances can have different compositions at the same frame. Hands referencing the same ID share that instance's state. **Merge assemblies** records a completed connection: choose the inserted instance, the receiving ID and the connection frame, then correct the receiving instance's whole-object box. Its correction propagation stays inside the current composition interval. The inserted track ends at the merge; event geometry links follow the receiving track. Composition changes and merges support undo, recovery and save/load.
 
 The next launch reopens the previous local project and playback position. Task manifests load matching assets and prefer `reviewed.json`; newer recovery drafts still offer a restore prompt. Missing files produce a relocation message. Set `IMPACT_RESTORE_LAST_PROJECT=0` to start with an empty editor.

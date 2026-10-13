@@ -51,3 +51,13 @@ independent=localize_instances(assembly_source,profile)
 mapping=independent['provenance']['video_local_instances']['original_to_local']
 assert mapping['3000']!=mapping['3001']!=mapping['1002']
 print('VIDEO_LOCAL_IDS_SINGLETON_ALIASES_DISTINCT_SCREWS_NUMERIC_TOOLS_HAND_NAMESPACES_MERGES_STABLE_REOPEN_PASS')
+
+# Hand detector fragments are a separate namespace, not numbered Object instances.
+hands_source=copy.deepcopy(source)
+hands_source['object_library'].update({str(uid):dict(label='Left_hand',category='Left_hand') for uid in range(50,95)})
+hands_out=localize_instances(hands_source,{**profile,'compact_import_ids':True})
+assert len(hands_out['object_library'])==len(independent['object_library'])
+assert not any(info['category'] in ('hand','left_hand','right_hand') for info in hands_out['object_library'].values())
+assert set(hands_out['unassigned_hand_candidates']['object_library'])=={str(uid) for uid in range(50,95)}
+assert hands_out['tracks']['T_LEFT_HAND']==source['tracks']['T_LEFT_HAND']
+assert localize_instances(hands_out,{**profile,'compact_import_ids':True})==hands_out

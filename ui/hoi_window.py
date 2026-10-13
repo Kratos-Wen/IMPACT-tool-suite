@@ -1325,6 +1325,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.act_load_hands_xml = import_menu.addAction(
             "Hands XML...", self._load_hands_xml
         )
+        import_menu.addAction('Hands from preannotation JSON...',self._load_hands_json)
         import_menu.addSeparator()
         self.act_load_annotations = import_menu.addAction("HOI Annotations...", self._load_annotations_json)
         self.act_shared_assembly = self.file_menu.addAction("Shared assembly...", self._open_assembly_editor)
@@ -5520,6 +5521,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if normalized_object_id is not None:
                 self._sync_event_draw_mode(force=True)
             return
+        if not self._instrument_instance_allowed(normalized_object_id):
+            QMessageBox.warning(self, 'Instrument', 'Choose a tool from the project Instrument list.')
+            self._update_inline_event_editor()
+            return
         self._push_undo()
         hand_data["instrument_object_id"] = normalized_object_id
         hand_data["tool_object_id"] = normalized_object_id
@@ -5563,7 +5568,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 combo.setCurrentIndex(0)
                 combo.setEditText("")
             else:
-                self._set_combo_to_data(combo, object_id)
+                self._show_instrument_selection(combo, object_id)
         finally:
             combo.blockSignals(False)
         self._on_inline_instrument_changed()
@@ -5971,10 +5976,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     if idx == 0:
                         continue
                     self.combo_inline_instrument.addItem(text, data)
-            inst_idx = self.combo_inline_instrument.findData(instrument_value)
-            self.combo_inline_instrument.setCurrentIndex(inst_idx if inst_idx >= 0 else 0)
-            if instrument_value is None:
-                self.combo_inline_instrument.setEditText("")
+            self._show_instrument_selection(self.combo_inline_instrument, instrument_value)
             self.combo_inline_instrument.blockSignals(False)
             self.combo_inline_instrument.setEnabled(True)
             self._refresh_model_noun_choices()
@@ -10338,7 +10340,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 existing.add(name);added=True
         if added:
             self._update_verb_combo();self.label_panel.refresh()
-        if not _PROJECT_PROFILE.get('create_default_noun_instances',True):return
+        if not _PROJECT_PROFILE.get('create_default_noun_instances',True):
+            self._rebuild_object_combos(self.combo_target.currentData(),self.combo_instrument.currentData())
+            return
         from core.instance_category import instance_category
         known={instance_category(name,_PROJECT_PROFILE,self.class_map.values()) for name in self.global_object_map}
         combos=[getattr(self,name,None) for name in ('combo_target','combo_instrument','combo_inline_noun','combo_inline_instrument')]
@@ -10353,6 +10357,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 self._register_object_entry(uid,name);known.add(instance_category(name,_PROJECT_PROFILE,self.class_map.values()))
         finally:
             for combo,previous in blocked:combo.blockSignals(previous)
+        self._rebuild_object_combos(self.combo_target.currentData(),self.combo_instrument.currentData())
 
     def _auto_load_task_bundle(self, video_path):
         from core.task_assets import resolve_task
@@ -13062,6 +13067,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             getattr(getattr(self, "combo_anomaly", None), "currentText", lambda: "")()
         )
         prev_anomaly = self._normalize_anomaly_label(prev.get("anomaly_label"))
+        if current_ui_instrument != prev_instrument and not self._instrument_instance_allowed(current_ui_instrument):
+            QMessageBox.warning(self, 'Instrument', 'Choose a tool from the project Instrument list.')
+            self._load_hand_draft_to_ui(self.selected_hand_label)
+            self._update_inline_event_editor()
+            return
         if any(new != old and not self._noun_instance_model_allowed(new)
                for new,old in ((current_ui_noun,prev_noun),(current_ui_instrument,prev_instrument))):
             QMessageBox.warning(self, 'Model-specific noun', 'This item is unavailable for the current model. Choose its actual category.')
@@ -14559,6 +14569,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._autosave_baseline = None
         self._task_resume_path = ""
         self._task_trial_id = ""
+        self._annotation_trial_id = ""
         try:
             task_loaded = self._auto_load_task_bundle(fp)
         except Exception as exc:
@@ -19073,7 +19084,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         payload = {
             "schema": "hoi-annotation",
-            "video_id": getattr(self, "_task_trial_id", "") or base,
+            "video_id": getattr(self, "_task_trial_id", "") or getattr(self, "_annotation_trial_id", "") or base,
             "video_path": self._portable_path_token(self.video_path),
             "participant_code": self._normalized_participant_code(),
             "experiment_mode": self._experiment_mode_key(),
@@ -20163,6 +20174,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if not hand_data:
             return
         if bool(getattr(self, "rad_draw_inst", None) and self.rad_draw_inst.isChecked()):
+            if not self._instrument_instance_allowed(obj_id):
+                QMessageBox.warning(self, 'Instrument', 'This item is not in the project Instrument list.')
+                return
             prev_instrument = self._hand_instrument_object_id(hand_data)
             if prev_instrument == obj_id:
                 self._select_object_item_in_list(obj_id, best_bbox=obj_box)
@@ -20271,6 +20285,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         except Exception:
             return
         if role == "instrument":
+            if not self._instrument_instance_allowed(object_id):
+                QMessageBox.warning(self, 'Instrument', 'The box was retained as an Object. Choose a tool for Instrument.')
+                return
             hand_data["instrument_object_id"] = object_id
             hand_data["tool_object_id"] = object_id
         else:
@@ -20811,21 +20828,56 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                    for name,value in self.global_object_map.items() if value==uid)
 
     def _refresh_model_noun_choices(self):
+        from ui.label_glossary import preserve_combo_editor
         for name in ('combo_target','combo_instrument','combo_inline_noun','combo_inline_instrument'):
             combo=getattr(self,name,None)
             if combo is None:continue
             model=combo.model()
             if not hasattr(model,'item'):continue
-            for index in range(combo.count()):
-                item=model.item(index)
-                if item is None:continue
-                allowed=self._noun_instance_model_allowed(combo.itemData(index))
-                item.setEnabled(allowed)
-                if not allowed:item.setToolTip('Unavailable for this model. Correct any imported reference before completion.')
+            with preserve_combo_editor(combo):
+                for index in range(combo.count()):
+                    item=model.item(index)
+                    if item is None:continue
+                    allowed=self._noun_instance_model_allowed(combo.itemData(index))
+                    item.setEnabled(allowed)
+                    if not allowed:item.setToolTip('Unavailable for this model. Correct any imported reference before completion.')
 
     def _object_label_is_selectable(self, label):
         category = re.sub(r"_\d+$", "", str(label or "").strip())
         return category.casefold() != 'hand' and not self._normalize_hand_label(category)
+
+    def _instrument_label_is_selectable(self, label):
+        if not self._object_label_is_selectable(label):return False
+        allowed=_PROJECT_PROFILE.get('instrument_classes')
+        if allowed is None:return True
+        from core.instance_category import instance_category
+        names={instance_category(name,_PROJECT_PROFILE) for name in allowed}
+        return self._noun_display_name(label) in names
+
+    def _instrument_instance_allowed(self, uid):
+        if uid is None:return True
+        names=[name for name,value in self.global_object_map.items() if value==uid]
+        return bool(names) and all(self._instrument_label_is_selectable(name) for name in names)
+
+    def _show_instrument_selection(self, combo, uid):
+        index=combo.findData(uid)
+        combo.setCurrentIndex(index if index>=0 else 0)
+        if uid is None:combo.setEditText('')
+        elif index<0:
+            combo.setEditText(f'Invalid instrument [{uid}]: {self._object_name_for_id(uid)}; choose a tool')
+
+    def _sync_inline_instrument_choices(self, uid):
+        combo=getattr(self,'combo_inline_instrument',None)
+        if not isinstance(combo,QComboBox):return
+        source=self.combo_instrument
+        items=[(source.itemText(i),source.itemData(i)) for i in range(source.count())]
+        previous=combo.blockSignals(True)
+        try:
+            if items != [(combo.itemText(i),combo.itemData(i)) for i in range(combo.count())]:
+                combo.clear()
+                for text,data in items:combo.addItem(text,data)
+            self._show_instrument_selection(combo,uid)
+        finally:combo.blockSignals(previous)
 
     def _register_object_entry(self, uid, label: str):
         """Ensure a new object id is represented in the registry and noun combo."""
@@ -20849,7 +20901,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if self._object_label_is_selectable(name) and self.combo_target.findData(uid) == -1:
             self.combo_target.addItem(display_text, uid)
         inst_combo = getattr(self, "combo_instrument", None)
-        if isinstance(inst_combo, QComboBox) and self._object_label_is_selectable(name) and inst_combo.findData(uid) == -1:
+        if isinstance(inst_combo, QComboBox) and self._instrument_label_is_selectable(name) and inst_combo.findData(uid) == -1:
             inst_combo.addItem(display_text, uid)
         decorate_combo(self.combo_target, "noun", self.global_object_map)
         decorate_combo(inst_combo, "noun", self.global_object_map)
@@ -20878,12 +20930,16 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 for name, uid in sorted(self.global_object_map.items(), key=lambda x: x[1]):
                     if not self._object_label_is_selectable(name):
                         continue
+                    if combo is getattr(self,'combo_instrument',None) and not self._instrument_label_is_selectable(name):
+                        continue
                     display_text = f"[{uid}] {self._noun_display_name(name)}"
                     combo.addItem(display_text, uid)
                 if selected is not None:
                     idx = combo.findData(selected)
                     if idx >= 0:
                         combo.setCurrentIndex(idx)
+                    elif combo is getattr(self,'combo_instrument',None):
+                        self._show_instrument_selection(combo, selected)
                 elif combo is getattr(self, "combo_instrument", None):
                     combo.setCurrentIndex(0)
                     combo.setEditText("")
@@ -21101,6 +21157,32 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             count=len(parsed),
             offset_shifted=offset_needed,
         )
+
+    def _load_hands_json(self):
+        if not self.player.cap:
+            QMessageBox.information(self,'Hands','Load the video first.');return
+        path,_=QFileDialog.getOpenFileName(self,'Import hand candidates only','','JSON Files (*.json)')
+        if not path:return
+        from core.hand_assets import read_json_hands,merge_hand_candidates
+        try:
+            rows,omitted=read_json_hands(path,self.player.frame_count,self.player.frame_rate,
+                self.player.cap.get(cv2.CAP_PROP_FRAME_WIDTH),self.player.cap.get(cv2.CAP_PROP_FRAME_HEIGHT),
+                getattr(self,'_task_trial_id','') or getattr(self,'_annotation_trial_id','') or None)
+            rows=[dict(row,orig_frame=row['orig_frame']-int(self.start_offset)) for row in rows]
+            merged=merge_hand_candidates(self.raw_boxes,rows,suppressed=getattr(self,'_suppressed_hand_boxes',[]),
+                reviews=getattr(self,'frame_review',{}),offset=self.start_offset)
+        except (OSError,ValueError,TypeError,KeyError) as exc:
+            QMessageBox.warning(self,'Hand JSON unavailable',str(exc));return
+        added=len(merged)-len(self.raw_boxes)
+        if added:
+            self._push_undo();self.raw_boxes=merged;self._rebuild_bboxes_from_raw()
+            if not getattr(self,'_task_trial_id','') and not getattr(self,'_annotation_trial_id','') and rows:
+                self._annotation_trial_id=rows[0].get('source_video_id','')
+                self._refresh_model_noun_choices()
+            self._bump_query_state_revision();self._bump_bbox_revision(refresh_completion=False)
+            self._refresh_boxes_for_frame(self.player.current_frame);self._checkpoint_tracking()
+        self._log('hoi_import_hands_json',path=path,added=added,ambiguous_hand_frames_omitted=omitted)
+        QMessageBox.information(self,'Hand candidates',f'Added {added} hand boxes. Omitted {omitted} ambiguous hand/frame groups. Events and Object IDs were retained.')
 
     def _parse_cvat_xml(self, path: str) -> List[dict]:
         """
@@ -21945,6 +22027,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             instrument_id = inline_instrument_id
         else:
             instrument_id = existing_instrument_id
+        if instrument_id != existing_instrument_id and not self._instrument_instance_allowed(instrument_id):
+            instrument_id = existing_instrument_id
 
         anomaly_combo = getattr(self, "combo_anomaly", None)
         inline_anomaly_combo = getattr(self, "combo_inline_anomaly", None)
@@ -22154,13 +22238,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
             instrument_id = self._hand_instrument_object_id(hand_data)
             if getattr(self, "combo_instrument", None) is not None:
-                idx_inst = self.combo_instrument.findData(instrument_id)
-                if idx_inst >= 0:
-                    self.combo_instrument.setCurrentIndex(idx_inst)
-                else:
-                    self.combo_instrument.setCurrentIndex(0)
-                if instrument_id is None:
-                    self.combo_instrument.setEditText("")
+                self._show_instrument_selection(self.combo_instrument, instrument_id)
+                self._sync_inline_instrument_choices(instrument_id)
 
             anomaly_label = self._normalize_anomaly_label(hand_data.get("anomaly_label"))
             if getattr(self, "combo_anomaly", None) is not None:

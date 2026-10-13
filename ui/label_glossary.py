@@ -1,8 +1,24 @@
 """Read-only label guide and selector tooltips; never changes event fields."""
+from contextlib import contextmanager
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLineEdit, QComboBox,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox)
 from core.label_glossary import glossary_rows, label_tooltip
+
+
+@contextmanager
+def preserve_combo_editor(combo):
+    """Qt model metadata updates can otherwise reset an editable selection's text."""
+    text=combo.currentText()
+    previous=combo.blockSignals(True)
+    editor=combo.lineEdit() if combo.isEditable() else None
+    editor_previous=editor.blockSignals(True) if editor is not None else None
+    try:yield
+    finally:
+        if editor is not None:
+            combo.setEditText(text)
+            editor.blockSignals(editor_previous)
+        combo.blockSignals(previous)
 
 
 def decorate_combo(combo, kind, objects=None):
@@ -10,10 +26,11 @@ def decorate_combo(combo, kind, objects=None):
         return
     objects = objects or {}
     by_id = {uid: name for name, uid in objects.items()}
-    for row in range(combo.count()):
-        label = by_id.get(combo.itemData(row), combo.itemText(row)) if kind == 'noun' else combo.itemText(row)
-        if label and str(label).lower() not in ('none', 'choose noun...', 'choose instrument...'):
-            combo.setItemData(row, label_tooltip(label, kind), Qt.ToolTipRole)
+    with preserve_combo_editor(combo):
+        for row in range(combo.count()):
+            label = by_id.get(combo.itemData(row), combo.itemText(row)) if kind == 'noun' else combo.itemText(row)
+            if label and str(label).lower() not in ('none', 'choose noun...', 'choose instrument...'):
+                combo.setItemData(row, label_tooltip(label, kind), Qt.ToolTipRole)
 
 
 class LabelGlossaryMixin:

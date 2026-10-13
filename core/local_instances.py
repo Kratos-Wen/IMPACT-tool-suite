@@ -24,8 +24,10 @@ def localize_instances(source,profile):
                 track.update(category=name,instance_name=name)
         return data
     library=data.get('object_library',{});tracks=data.get('tracks',{})
-    names={int(uid):instance_category(info.get('category') or info.get('label'),profile)
-           for uid,info in library.items()}
+    categories={int(uid):instance_category(info.get('category') or info.get('label'),profile)
+                for uid,info in library.items()}
+    hand_ids={uid for uid,name in categories.items() if name in ('hand','left_hand','right_hand')}
+    names={uid:name for uid,name in categories.items() if uid not in hand_ids}
     object_tracks={}
     for tid,track in tracks.items():
         uid=track.get('object_id');category=instance_category(track.get('category'),profile)
@@ -40,7 +42,8 @@ def localize_instances(source,profile):
     for ids in groups.values():
         for uid in ids:roots[uid]=min(ids)
     active=sorted(set(roots.values()))
-    compact=max(active,default=0)>99
+    contiguous = active in (list(range(len(active))), list(range(1, len(active)+1)))
+    compact=max(active,default=0)>99 or bool(profile.get('compact_import_ids') and not contiguous)
     display={uid:i+1 for i,uid in enumerate(active)} if compact else {uid:uid for uid in active}
     numeric={uid:display[root] for uid,root in roots.items()}
     aliases={tid:'T_OBJ_'+str(numeric[uid]) for tid,uid in object_tracks.items()}
@@ -61,11 +64,15 @@ def localize_instances(source,profile):
 
     result=refs(data);new_library={}
     for old,info in library.items():
+        if int(old) in hand_ids:continue
         uid=int(old);new=numeric[uid];entry=deepcopy(info)
         entry.update(category=names[uid],label=names[uid])
         new_library.setdefault(str(new),entry)
     for uid,name in names.items():new_library.setdefault(str(numeric[uid]),{'label':name,'category':name})
     result['object_library']=new_library
+    if hand_ids:
+        result.setdefault('unassigned_hand_candidates',{}).setdefault('object_library',{}).update(
+            {str(uid):deepcopy(library[str(uid)]) for uid in hand_ids})
     new_tracks={}
     for tid,track in tracks.items():
         if tid not in object_tracks:new_tracks[tid]=deepcopy(track);continue

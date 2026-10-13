@@ -83,6 +83,7 @@ class AnnotationPolicyMixin:
             names=[name for name,value in self.global_object_map.items() if value==uid]
             if any(not self._object_label_is_selectable(name) for name in names):missing.append('hand used as Object/instrument')
             if any(category_for_label(name,'noun') in ambiguous or name.startswith('unresolved_object') for name in names):missing.append('identify '+role+' category')
+            if role=='instrument' and not self._instrument_instance_allowed(uid):missing.append('choose a valid instrument')
         target=self._hand_noun_object_id(hand)
         if target is not None and not hand.get('shared_assembly_ref'):
             categories={self._norm_category(name) for name,uid in self.global_object_map.items() if uid==target}
@@ -119,7 +120,7 @@ class AnnotationPolicyMixin:
                 if not data.get('verb'):continue
                 for name in self._policy_missing(data):
                     issues.append({'event_id':event['event_id'],'hand':hand,'frame':data.get('interaction_start') or 0,
-                                   'field':'verb' if name=='replace legacy verb' else 'instrument_object_id' if name=='identify instrument category' else 'anomaly_label' if name.startswith(('anomaly','unknown')) else 'noun_object_id',
+                                   'field':'verb' if name=='replace legacy verb' else 'instrument_object_id' if name in ('identify instrument category','choose a valid instrument') else 'anomaly_label' if name.startswith(('anomaly','unknown')) else 'noun_object_id',
                                    'code':name.replace(' ','_'),'missing':[name]})
         from core.event_intervals import interiors_overlap
         for index,event in enumerate(self.events):
