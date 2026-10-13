@@ -91,11 +91,13 @@ class AssemblyEditorMixin:
             fastener=slot_fastener(spec,model)
             if not fastener and spec.get('fastener_by_model'):
                 fastener=' / '.join(f'{value} ({key})' for key,value in spec['fastener_by_model'].items())
-            text=spec['id']+(f'\n{fastener}' if fastener else '')
+            members=list(dict.fromkeys(([fastener] if fastener else [])+spec.get('slot_components',[])))
+            joint=' + '.join(members)
+            text=spec['id']+(f'\n{joint}' if joint else '')
             cell=QTableWidgetItem(text);cell.setFlags(cell.flags() & ~Qt.ItemIsEditable);table.setItem(row,0,cell)
             for col in (1,2):
                 check=QCheckBox();check.setTristate(True)
-                check.setToolTip((f'Fastener: {fastener}. ' if fastener else '')+'Checked: secured; unchecked: not secured; dash: unknown');table.setCellWidget(row,col,check)
+                check.setToolTip((f'Connection: {joint}. ' if joint else '')+'Checked: the whole connection is secured; unchecked: the connection is not secured; dash: unknown. Keep the last confirmed state through occlusion.');table.setCellWidget(row,col,check)
         table.resizeRowsToContents()
         return table
 

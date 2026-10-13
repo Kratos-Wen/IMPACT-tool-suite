@@ -10,6 +10,7 @@ def excluded_components(profile):
     names = set(profile.get('assembly_slot_managed_components', []))
     names.update(profile.get('assembly_forbidden_components', []))
     for spec in profile.get('assembly_interfaces', []):
+        names.update(spec.get('slot_components', []))
         if spec.get('fastener_class'):
             names.add(spec['fastener_class'])
         names.update(spec.get('fastener_by_model', {}).values())
