@@ -273,7 +273,9 @@ class FrameReviewMixin:
 
     def _frame_review_issues(self):
         records=getattr(self,'frame_review',{});issues=[];fps=float(self.player.frame_rate or 15)
-        cache_key=(getattr(self,'_bbox_revision',0),getattr(self,'_query_state_revision',0),id(records),len(self.raw_boxes),len(self.events),fps)
+        cache_key=(getattr(self,'_bbox_revision',0),getattr(self,'_query_state_revision',0),
+                   id(getattr(self,'frame_review',None)),id(self.raw_boxes),len(self.raw_boxes),
+                   len(self.events),int(self.start_offset),fps)
         if getattr(self,'_frame_review_cache_key',None)==cache_key:return list(self._frame_review_cache)
         index={}
         for box in self.raw_boxes:

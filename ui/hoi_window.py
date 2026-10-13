@@ -60,7 +60,7 @@ from ui.annotation_policy import AnnotationPolicyMixin, onset_resolved
 from core.frame_review import valid_record
 from PyQt5.QtCore import Qt, QSize, QThread, pyqtSignal, QTimer, QEvent
 from PyQt5.QtWidgets import QStyle
-from PyQt5.QtGui import QKeySequence, QColor, QPixmap
+from PyQt5.QtGui import QKeySequence, QColor, QPixmap, QPalette
 import copy
 import json
 import hashlib
@@ -2166,7 +2166,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.lbl_inline_grounding_title = QLabel("Grounding")
         self.lbl_inline_grounding_title.setObjectName("groundingAssistTitle")
         self.lbl_inline_grounding_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_inline_grounding_title.setMinimumWidth(82)
+        self.lbl_inline_grounding_title.setMinimumWidth(140)
         grounding_layout.addWidget(self.lbl_inline_grounding_title)
         self.btn_inline_detect_objects = QPushButton("Find Boxes")
         self.btn_inline_detect_objects.setProperty("groundingAction", True)
@@ -2182,9 +2182,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.lbl_inline_object_candidates = QLabel("Object candidates will appear here.")
         self.lbl_inline_object_candidates.setObjectName("groundingAssistText")
         self.lbl_inline_object_candidates.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_inline_object_candidates.setWordWrap(False)
+        self.lbl_inline_object_candidates.setWordWrap(True)
         self.lbl_inline_object_candidates.setMinimumWidth(180)
-        self.lbl_inline_object_candidates.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.lbl_inline_object_candidates.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         grounding_layout.addWidget(self.lbl_inline_object_candidates, 1)
         inline_candidate_row = QHBoxLayout()
         inline_candidate_row.setContentsMargins(0, 0, 0, 0)
@@ -2209,8 +2209,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         inline_actions = QHBoxLayout()
         inline_actions.setContentsMargins(0, 0, 0, 0)
         inline_actions.setSpacing(6)
-        inline_actions.addWidget(self.inline_grounding_card, 1)
-        inline_actions.addSpacing(2)
+        inline_layout.addWidget(self.inline_grounding_card)
         self.btn_inline_edit_boxes = QPushButton("Edit Boxes")
         self.btn_inline_edit_boxes.setCheckable(True)
         self.btn_inline_edit_boxes.setProperty("compactChip", True)
@@ -8256,6 +8255,20 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return max(10.5 if sys.platform == 'darwin' else 7.5, min(16.0, scaled))
 
     def _apply_professional_ui_style(self) -> None:
+        # The editor uses light surfaces even when macOS supplies a dark palette.
+        palette = self.palette()
+        for role, color in (
+            (QPalette.Window, '#F2F4F7'), (QPalette.Base, '#FFFFFF'),
+            (QPalette.AlternateBase, '#F8FAFC'), (QPalette.Button, '#FFFFFF'),
+            (QPalette.WindowText, '#101828'), (QPalette.Text, '#101828'),
+            (QPalette.ButtonText, '#101828'), (QPalette.Highlight, '#DBEAFE'),
+            (QPalette.HighlightedText, '#101828'),
+            (QPalette.ToolTipBase, '#FFFFFF'), (QPalette.ToolTipText, '#101828'),
+        ):
+            palette.setColor(role, QColor(color))
+        for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
+            palette.setColor(QPalette.Disabled, role, QColor('#667085'))
+        self.setPalette(palette)
         body_pt = self._preferred_base_font_pt()
         caption_pt = max(9.5 if sys.platform == 'darwin' else 7.0, body_pt - 0.30)
         title_pt = body_pt
@@ -8284,6 +8297,18 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self.setFont(font)
         self.setStyleSheet(
             f"""
+            QWidget {{ color: #101828; }}
+            HOIWindow, QDialog {{ background: #F2F4F7; }}
+            QMenu, QComboBox QAbstractItemView, QListWidget, QTableWidget {{
+                background: #FFFFFF;
+                color: #101828;
+                selection-background-color: #DBEAFE;
+                selection-color: #101828;
+            }}
+            QMenu::item:selected {{ background: #DBEAFE; color: #101828; }}
+            QToolTip {{ background: #FFFFFF; color: #101828; border: 1px solid #D0D5DD; }}
+            QPushButton:disabled, QToolButton:disabled, QComboBox:disabled,
+            QLineEdit:disabled, QSpinBox:disabled {{ color: #667085; background: #F2F4F7; }}
             QFrame#toolbarFrame {{
                 background: #F8FAFC;
                 border: 1px solid #E4E7EC;
@@ -8559,7 +8584,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
     ):
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.NoInsert)
-        combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(18)
+        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         if combo.lineEdit() is not None:
             combo.lineEdit().setPlaceholderText(placeholder)
         completer = combo.completer()
@@ -8877,6 +8904,28 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._update_hoi_titles()
 
     def _hoi_segments_for_hand(self, hand_key: str) -> List[Dict]:
+        # Playhead/hover repaints do not change annotation completeness.
+        # Compare snapshots as well as revisions to catch direct draft/event edits.
+        hands = [(ev.get('event_id'), ev.get('hoi_data', {}).get(hand_key, {})) for ev in self.events]
+        context = (
+            getattr(self, '_bbox_revision', 0), getattr(self, '_query_state_revision', 0),
+            id(getattr(self, 'frame_review', None)), id(self.raw_boxes), len(self.raw_boxes),
+            self.start_offset, self.selected_event_id, self._manual_mode_enabled(),
+            float(self.player.frame_rate or 15),
+        )
+        cache = getattr(self, '_timeline_completion_cache', {})
+        previous = cache.get(hand_key)
+        dependencies = (hands, self._assembly_data(), self.global_object_map, _PROJECT_PROFILE)
+        if previous is None or previous[0] != context or previous[1] != dependencies:
+            complete = {
+                event_id: bool(self._hand_completion_state(hand, hand_key=hand_key).get('complete'))
+                for event_id, hand in hands
+                if hand.get('interaction_start') is not None and hand.get('interaction_end') is not None
+            }
+            cache[hand_key] = (context, copy.deepcopy(dependencies), complete)
+            self._timeline_completion_cache = cache
+        else:
+            complete = previous[2]
         segs = []
         for ev in self.events:
             h = ev.get("hoi_data", {}).get(hand_key, {})
@@ -8895,7 +8944,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     "onset": int(onset) if onset is not None else int(s),
                     "verb": verb,
                     "color": base_color,
-                    "complete": bool(self._hand_completion_state(h, hand_key=hand_key).get('complete')),
+                    "complete": complete.get(ev.get('event_id'), False),
                     "auto_color": base_color is None,
                 }
             )
@@ -19149,13 +19198,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return result
 
     def _event_visible_object_ids(self, frame=None):
-        """Only selected event entities may appear on the canvas; ID 0 is valid."""
+        """Show the entities of the displayed relations, including playhead fallback."""
         ids = set()
         if self.selected_event_id is None:
             return ids
         f = self._assembly_frame() if frame is None else frame
-        relations = [row for row in self._frame_display_relations(f)
-                     if row.get("event_id") == self.selected_event_id]
+        relations = self._frame_display_relations(f)
         draft = getattr(self, "event_draft", {}) or {}
         # Keep incomplete drafts drawable while their boundaries are being entered.
         if not relations and any((d.get('interaction_start') is None or d.get('interaction_end') is None)
