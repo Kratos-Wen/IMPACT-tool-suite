@@ -18104,6 +18104,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         data = adapt_annotation(data, _PROJECT_PROFILE)
         from core.local_instances import localize_instances
         data = localize_instances(data, _PROJECT_PROFILE)
+        self._unassigned_hand_candidates = copy.deepcopy(data.get("unassigned_hand_candidates", {}))
         self._annotation_trial_id = str(data.get('video_id') or '')
         self._annotation_provenance = copy.deepcopy(data.get('provenance', {}))
         if archive:self._annotation_provenance['original_archive'] = archive
@@ -18209,6 +18210,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             )
             class_id = info.get("class_id")
             label = self._noun_display_name(info.get("category") or label)
+            if str(label).lower() == "hand" or self._is_hand_label(label):
+                self._unassigned_hand_candidates.setdefault("object_library", {})[str(uid)] = copy.deepcopy(info)
+                continue
             if not label:
                 label = f"obj_{uid}"
             if class_id is not None:
@@ -18280,6 +18284,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     label = aid
                     break
 
+            if not label and cat_lower == "hand":
+                # Detector boxes with no anatomical side cannot create a third hand.
+                self._unassigned_hand_candidates.setdefault("tracks", {})[track_id] = copy.deepcopy(info)
+                continue
             if not label:
                 label = _label_for_id(obj_id) or category or f"obj_{obj_id}"
 
@@ -19031,6 +19039,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         payload["shared_assembly"] = validate_timeline(self._assembly_data())
         payload["assembly_default_reference"] = getattr(self,"_assembly_default_reference",False)
         payload["editor_geometry"] = {"suppressed_hand_boxes": list(getattr(self, "_suppressed_hand_boxes", []))}
+        if getattr(self, "_unassigned_hand_candidates", {}):
+            payload["unassigned_hand_candidates"] = copy.deepcopy(self._unassigned_hand_candidates)
         payload['editor_view'] = dict(start_frame=int(self.start_offset), end_frame=self.end_frame)
         return payload
 

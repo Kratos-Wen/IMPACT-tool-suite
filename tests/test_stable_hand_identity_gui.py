@@ -20,7 +20,11 @@ payload=dict(schema='hoi-annotation',video_id='fixture',frame_count=100,fps=15,
  for index,side in enumerate(('left_hand','right_hand'))},
  hoi_events={'left_hand':[dict(start_frame=0,contact_onset_frame=0,end_frame=20,verb='hold',noun_object_id=0),
  dict(start_frame=21,contact_onset_frame=21,end_frame=40,verb='hold',noun_object_id=0)],'right_hand':[]})
+payload["object_library"]["3068"]=dict(label="hand",category="hand")
+payload["tracks"]["T_UNASSIGNED_HAND"]=dict(category="hand",object_id=3068,boxes=[dict(frame=0,bbox=[1,2,10,20],source="model")])
 w._load_annotations_v2(payload)
+assert not any(b["label"].lower()=="hand" for b in w.raw_boxes)
+assert not any(name.lower()=="hand" for name in w.global_object_map)
 def assert_ids():
  for label in ('Left_hand','Right_hand'):
   rows=[b for b in w.raw_boxes if b['label']==label]
@@ -44,6 +48,7 @@ assert any(b['label']=='Right_hand' and b['orig_frame']==10 for b in w.raw_boxes
 assert_ids()
 for _ in range(5):
  saved=w._build_payload_v2()
+ assert saved["unassigned_hand_candidates"]["tracks"]["T_UNASSIGNED_HAND"]["boxes"]==payload["tracks"]["T_UNASSIGNED_HAND"]["boxes"]
  assert saved['tracks']['T_LEFT_HAND']['hand_id']=='H_LEFT'
  assert saved['tracks']['T_RIGHT_HAND']['hand_id']=='H_RIGHT'
  w._load_annotations_v2(copy.deepcopy(saved));assert_ids()
