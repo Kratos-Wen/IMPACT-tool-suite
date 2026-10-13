@@ -9,6 +9,7 @@ class AttributeSelector(QComboBox):
         super().__init__(parent)
         self._values = []
         self._captions = {}
+        self._profile_source = ''
         self.setEditable(True)
         self.lineEdit().setReadOnly(True)
         self.lineEdit().setPlaceholderText('Normal')
@@ -31,6 +32,9 @@ class AttributeSelector(QComboBox):
         self.setCurrentText(selected)
         self.blockSignals(old)
 
+    def setProfileSource(self, path):
+        self._profile_source = str(path or '')
+
     def currentText(self):
         return '; '.join(self._values) if self._values else 'normal'
 
@@ -47,7 +51,9 @@ class AttributeSelector(QComboBox):
             self.model().item(i).setData(Qt.Checked if code in self._values else Qt.Unchecked,Qt.CheckStateRole)
             if code in self._values:captions.append(self.itemText(i))
         self.lineEdit().setText(', '.join(captions) if captions else 'Normal')
-        self.setToolTip('\n'.join(captions) if captions else 'Normal. Select every anomaly type visible in this event.')
+        tooltip='\n'.join(captions) if captions else 'Normal. Select every anomaly type visible in this event.'
+        if self._profile_source:tooltip+='\nProject profile: '+self._profile_source
+        self.setToolTip(tooltip)
 
     def toggle(self, code):
         if code == 'normal':

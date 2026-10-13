@@ -8664,6 +8664,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return
         selected_label = self._remember_anomaly_label(selected)
         if isinstance(combo, AttributeSelector):
+            combo.setProfileSource(os.environ.get('IMPACT_PROJECT_PROFILE', ''))
             combo.setOptions(self._anomaly_label_options(), selected_label,
                              _PROJECT_PROFILE.get('anomaly_display_names', {}))
             return
@@ -10375,6 +10376,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
         self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
         # Register checkpoints only: opening a video must not eagerly load GPU models.
+        self._refresh_anomaly_combos('normal')
         checkpoint = paths.get("sam_checkpoint")
         os.environ.pop("IMPACT_SAM2_CHECKPOINT", None)
         if checkpoint and checkpoint.is_file():

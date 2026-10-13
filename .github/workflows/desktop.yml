@@ -95,5 +95,7 @@ jobs:
       - run: python tests/test_tracking_jobs.py
       - run: python tests/test_background_tracking_gui.py
       - run: python tests/test_session_timeline_gui.py
+      - run: python tests/test_reverse_event_drag_gui.py
+      - run: python tests/test_profile_anomaly_refresh_gui.py
       - run: python tests/test_editor_failure_paths_gui.py
       - run: python tests/test_worker_lifecycle_gui.py

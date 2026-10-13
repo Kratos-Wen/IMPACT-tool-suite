@@ -55,8 +55,8 @@ class ProjectSessionMixin:
             profile=data.get('profile','')
             if not task and profile:
                 if not Path(profile).is_file():raise ValueError('The previous project profile is unavailable.')
-                from core.project_profile import activate_project_profile
-                activate_project_profile(profile)
+                if not self._load_project_profile(profile,checkpoint=False):
+                    raise ValueError('The previous project profile could not be loaded.')
             self._set_experiment_mode_key('manual')
             if not self._load_video(str(video),resume_annotation=annotation):return False
             if int(self.player.frame_count)!=data['frames'] or abs(float(self.player.frame_rate)-data['fps'])>0.01:

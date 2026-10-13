@@ -331,8 +331,7 @@ class HOITimelineRow(BaseTimelineRow):
             start = self._create_anchor
             if start is None:
                 start = self._preview_interval[0] if self._preview_interval else f
-            s = int(start)
-            e_ = max(s, int(f))
+            s, e_ = sorted((int(start), int(f)))
             if not self._overlaps(s, e_, None):
                 self._preview_interval = (s, e_)
                 self._preview_onset = s + ((e_ - s) // 2)
@@ -443,6 +442,8 @@ class HOITimelineRow(BaseTimelineRow):
             return
         if not self._dragging:
             return
+        # Mouse moves can be coalesced; commit the actual release position.
+        self.mouseMoveEvent(_e)
         if self._mode == "create" and self._preview_interval:
             s, e = self._preview_interval
             onset = self._preview_onset if self._preview_onset is not None else s
