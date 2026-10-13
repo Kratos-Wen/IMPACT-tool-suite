@@ -20419,6 +20419,17 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if is_hand_box:
                 key = f"{self._normalize_hand_label(label_txt)}:{int(target_orig) + int(self.start_offset)}"
                 self._suppressed_hand_boxes = [k for k in getattr(self, "_suppressed_hand_boxes", []) if k != key]
+            # A physical entity has one rectangle at this frame. Redrawing is
+            # an explicit correction, including replacement of machine proposals.
+            # The undo snapshot above retains every replaced source rectangle.
+            self.raw_boxes = [
+                rb for rb in self.raw_boxes
+                if not (
+                    rb.get("id") == obj_id
+                    and rb.get("orig_frame") == target_orig
+                    and bool(self._normalize_hand_label(rb.get("label"))) == is_hand_box
+                )
+            ]
             self.raw_boxes.append(new_rb)
             self._selected_edit_box = dict(new_rb)
             self._rebuild_bboxes_from_raw()

@@ -31,6 +31,12 @@ def assert_ids():
   assert rows and {b['id'] for b in rows}=={hand_box_id(label)},(label,{b['id'] for b in rows})
  assert hand_box_id('Left_hand')!=hand_box_id('Right_hand')
 assert_ids()
+# Redrawing a hand is a correction of this physical hand at this frame.
+w.player.current_frame=0
+prior=copy.deepcopy(w.raw_boxes)
+w._on_box_edited(None,dict(_action='add',label='Left_hand',frame=0,x1=2,y1=3,x2=20,y2=30))
+assert len([b for b in w.raw_boxes if b['label']=='Left_hand' and b['orig_frame']==0])==1
+w._hoi_undo();assert w.raw_boxes==prior
 # A manual frame reuses the hand identity, and an edit affects only its own frame.
 w._set_selected_event(w.events[0]['event_id'],'Left_hand');w.player.current_frame=90
 w._on_box_edited(None,dict(_action='add',label='Left_hand',frame=90,x1=1,y1=2,x2=15,y2=20))
