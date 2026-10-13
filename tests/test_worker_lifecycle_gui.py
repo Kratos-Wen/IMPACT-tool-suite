@@ -24,6 +24,12 @@ with tempfile.TemporaryDirectory() as d:
     w._semantic_model_file=lambda:str(root/'model.pt')
     w._semantic_feedback_feature_dim=4
     w._semantic_adapter_train_config.update(train_every=1,min_samples=1)
+    # Local automatic training is disabled in the shipping manual workflow.
+    w._semantic_feedback_pending=1
+    w._maybe_schedule_semantic_training()
+    assert w._semantic_adapter_train_worker is None
+    # Exercise legacy worker cleanup in isolation, not a user-selectable mode.
+    w._semantic_assist_enabled=lambda:True
     # Exercise completion, exceptional completion, and immediate replacement.
     for cycle in range(6):
         gate=threading.Event();entered=threading.Event()

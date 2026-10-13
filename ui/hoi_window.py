@@ -1207,7 +1207,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._hoi_saved_signature = None
         self._close_request_approved = False
         self._close_request_finalized = False
-        self._experiment_mode = "full_assist"
+        self._experiment_mode = "manual"
         self._next_best_query: Optional[Dict[str, Any]] = None
         self._current_query_candidates: List[Dict[str, Any]] = []
         self._next_best_query_id = ""
@@ -1263,21 +1263,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         toolbar_main_row.setContentsMargins(0, 0, 0, 0)
         toolbar_main_row.setSpacing(12)
 
-        lbl_experiment_mode = QLabel("Mode")
-        lbl_experiment_mode.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        session_row.addWidget(lbl_experiment_mode)
-        self.combo_experiment_mode = QComboBox()
+        # Internal compatibility for old session files; annotation has one workflow.
+        self.combo_experiment_mode = QComboBox(self)
         self.combo_experiment_mode.addItem("Manual", "manual")
-        self.combo_experiment_mode.addItem("Full Assist", "full_assist")
-        self.combo_experiment_mode.setCurrentIndex(1)
-        self.combo_experiment_mode.setMinimumWidth(120)
-        self.combo_experiment_mode.setToolTip(
-            "Manual: annotate directly. Full Assist: show action suggestions and box assistance."
-        )
-        self.combo_experiment_mode.currentIndexChanged.connect(
-            self._on_experiment_mode_changed
-        )
-        session_row.addWidget(self.combo_experiment_mode)
+        self.combo_experiment_mode.hide()
         self.lbl_participant_code = QLabel("Participant No")
         self.lbl_participant_code.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.lbl_participant_code.setVisible(False)
@@ -1344,7 +1333,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.act_frame_review_status=self.file_menu.addAction("Keyframes: select an event")
         self.act_frame_review_status.setEnabled(False)
 
-        detect_menu = self.file_menu.addMenu("Detection")
+        detect_menu = QMenu("Detection", self)
         self.detect_menu = detect_menu
         self.act_load_yolo_model = detect_menu.addAction(
             "Load YOLO Model...", self._load_yolo_model
@@ -1373,7 +1362,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             "YOLO Incremental Training...", self._incremental_train_yolo
         )
 
-        assist_menu = self.file_menu.addMenu("Action Assist")
+        assist_menu = QMenu("Action Assist", self)
         self.assist_menu = assist_menu
         self.act_load_videomae_model = assist_menu.addAction(
             "Load Frozen Video Encoder...", self._load_videomae_model
@@ -1410,7 +1399,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_file_menu = QToolButton()
         self.btn_file_menu.setText("\u22EF")
         self.btn_file_menu.setToolTip(
-            "Project, import/export, detection, and model actions"
+            "Open projects, import annotations, and save"
         )
         self.btn_file_menu.setPopupMode(QToolButton.InstantPopup)
         self.btn_file_menu.setMenu(self.file_menu)
@@ -2474,31 +2463,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         study_mode = bool(getattr(self, "_user_study_mode", True))
         self._user_study_ui_profile = study_mode
 
-        combo = getattr(self, "combo_experiment_mode", None)
-        if combo is not None:
-            current_mode = str(combo.currentData() or "full_assist")
-            keep_modes = [
-                ("Manual", "manual"),
-                ("Full Assist", "full_assist"),
-            ]
-            combo.blockSignals(True)
-            combo.clear()
-            for label, value in keep_modes:
-                combo.addItem(label, value)
-            target_mode = current_mode if current_mode in {"manual", "full_assist"} else "full_assist"
-            target_index = max(0, combo.findData(target_mode))
-            combo.setCurrentIndex(target_index)
-            combo.blockSignals(False)
-            combo.setToolTip(
-                "Manual: annotate directly. Full Assist: show action suggestions and box assistance."
-            )
+        self._hide_local_inference_controls()
 
         operator_only_actions = (
             getattr(self, "act_new_trial", None),
             getattr(self, "act_prune_object_library", None),
             getattr(self, "act_load_yaml", None),
-            getattr(self, "act_import_yolo_boxes", None),
-            getattr(self, "act_load_hands_xml", None),
             getattr(self, "act_toggle_verb_library_admin", None),
             getattr(self, "act_save_hands_xml", None),
             getattr(self, "act_show_onboarding_banner", None),
@@ -2557,7 +2527,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if study_mode:
                 self.btn_file_menu.setToolTip("Load clip, import study files, and save.")
             else:
-                self.btn_file_menu.setToolTip("Project, import/export, detection, and model actions")
+                self.btn_file_menu.setToolTip("Open projects, import annotations, and save")
 
         banner = getattr(self, "onboarding_banner", None)
         if banner is not None:
@@ -2580,6 +2550,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if getattr(self, "btn_quick_start", None) is not None:
             self.btn_quick_start.setVisible(True)
             self.btn_quick_start.setEnabled(True)
+        self._hide_local_inference_controls()
 
     def _rebuild_object_tools_menu(self) -> None:
         menu = getattr(self, "object_tools_menu", None)
@@ -2814,7 +2785,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if participant_code:
             parts.append(self._safe_filename_token(participant_code, fallback="participant"))
         parts.append(base)
-        parts.append(self._safe_filename_token(self._experiment_mode_key(), fallback="full_assist"))
+        parts.append(self._safe_filename_token(self._experiment_mode_key(), fallback="manual"))
         return "_".join(
             str(part).strip("_") for part in parts if str(part).strip("_")
         )
@@ -3311,12 +3282,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._highlight_onboarding_target(focus_key)
 
     def _set_experiment_mode_key(self, mode_key: str) -> None:
-        combo = getattr(self, "combo_experiment_mode", None)
-        if combo is None:
-            return
-        idx = combo.findData(str(mode_key or ""))
-        if idx >= 0 and idx != combo.currentIndex():
-            combo.setCurrentIndex(idx)
+        # Ignore obsolete modes in saved sessions without changing annotation data.
+        self._experiment_mode = "manual"
+        self._hide_local_inference_controls()
 
     def _open_quick_start_dialog(self) -> None:
         if bool(getattr(self, "_quick_start_dialog_open", False)):
@@ -3380,20 +3348,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 )
             return btn
 
-        btn_start_manual = _make_action_button("Start Manual", primary=True)
-        btn_start_full = _make_action_button("Start Full Assist")
+        btn_start_manual = _make_action_button("Start annotation", primary=True)
         btn_load_video = _make_action_button("Load Video...")
 
         btn_start_manual.clicked.connect(
             _after_close(lambda: self._set_experiment_mode_key("manual"))
         )
-        btn_start_full.clicked.connect(
-            _after_close(lambda: self._set_experiment_mode_key("full_assist"))
-        )
         btn_load_video.clicked.connect(_after_close(self._load_video))
 
         actions_row.addWidget(btn_start_manual)
-        actions_row.addWidget(btn_start_full)
         actions_row.addStretch(1)
         actions_row.addWidget(btn_load_video)
         hero_layout.addLayout(actions_row)
@@ -3421,7 +3384,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         (
                             "Then import the Noun List, Verb List, and optionally a Verb-Noun Ontology CSV."
                             if getattr(self, "_noun_only_mode", False)
-                            else "Then import the object list, verb list, and ontology."
+                            else "Project folders load their configuration and annotations automatically."
                         ),
                     ],
                     "accent": "#2563EB",
@@ -3524,20 +3487,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 {
                     "title": "Manual",
                     "body_lines": [
-                        "Everything by hand.",
-                        "Best for strict baselines and first-time familiarization.",
+                        "Edit imported events and boxes, or create your own.",
+                        "SAM click and background correction remain optional.",
                     ],
                     "accent": "#334155",
                     "tone": "neutral",
-                },
-                {
-                    "title": "Full Assist",
-                    "body_lines": [
-                        "Shows action suggestions and box assistance.",
-                        "Use this for the guided workflow during the study.",
-                    ],
-                    "accent": "#16A34A",
-                    "tone": "green",
                 },
                 {
                     "title": "Review meanings",
@@ -6175,7 +6129,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     else (
                         "Wait for the current detection job to finish."
                         if detection_assist_enabled
-                        else "Detection assist is disabled in Manual mode. Switch to Full Assist to use Find Boxes."
+                        else "Draw a box or use SAM click to add a box."
                     )
                 )
                 self._inline_object_candidates = []
@@ -9696,6 +9650,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return cache_file
 
     def _start_handtrack_precompute(self, video_path: Optional[str] = None, *, force: bool = False) -> bool:
+        if self._manual_mode_enabled():
+            return False
         target_path = str(video_path or self.video_path or "").strip()
         if not target_path:
             return False
@@ -10859,6 +10815,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return True
 
     def _ensure_semantic_adapter_loaded(self) -> None:
+        if not self._semantic_assist_enabled():
+            return
         participant_model_path = self._semantic_model_file()
         base_model_path = str(getattr(self, "semantic_adapter_base_model_path", "") or "").strip()
         active_model_path = str(getattr(self, "semantic_adapter_active_model_path", "") or "").strip()
@@ -11001,6 +10959,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         authority_level: str = "",
         query_id: str = "",
     ) -> None:
+        if not self._semantic_assist_enabled():
+            return
         hand_after = ((event or {}).get("hoi_data", {}) or {}).get(hand_key)
         sample = self._semantic_feature_sample(event, hand_key, hand_after)
         if not sample:
@@ -11064,6 +11024,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._maybe_schedule_semantic_training()
 
     def _maybe_schedule_semantic_training(self) -> None:
+        if not self._semantic_assist_enabled():
+            return
         if getattr(self, '_close_request_approved', False) or getattr(self, '_close_request_finalized', False):
             return
         train_every = int(self._semantic_adapter_train_config.get("train_every", 6) or 6)
@@ -13864,77 +13826,22 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         handtrack_building = bool(handtrack_status.get("building"))
         handtrack_ready = bool(handtrack_status.get("ready"))
         handtrack_backend = str(handtrack_status.get("backend") or "").strip()
-        semantic_status = self._semantic_adapter_runtime_status()
-        assist_mode = self._experiment_mode_key()
-        base_ready = bool(video_loaded and nouns_loaded and verbs_loaded and ontology_loaded)
-        mode_ready = bool(base_ready and videomae_source_ready) if assist_mode == "full_assist" else base_ready
-        required_missing = [
-            name
-            for name, present in (
-                ("video", video_loaded),
-                ("nouns", nouns_loaded),
-                ("verbs", verbs_loaded),
-                ("ontology", ontology_loaded),
-                ("videomae", (assist_mode != "full_assist") or videomae_source_ready),
-            )
-            if not present
-        ]
+        semantic_status = {}
+        assist_mode = "manual"
+        base_ready = bool(video_loaded and nouns_loaded and verbs_loaded)
+        mode_ready = base_ready
+        required_missing = [name for name, present in
+                            (("video", video_loaded), ("nouns", nouns_loaded), ("verbs", verbs_loaded))
+                            if not present]
         if mode_ready:
-            clip_phase = "ready"
-            clip_label = "Ready" if assist_mode != "full_assist" else "Ready to annotate"
-            detail_parts = (
-                ["Video and required lists are loaded."]
-                if assist_mode != "full_assist"
-                else ["Current mode requirements satisfied."]
-            )
-            if assist_mode == "full_assist":
-                if videomae_cache_loaded and not videomae_ready:
-                    detail_parts.append("Using precomputed clip features.")
-                elif videomae_ready:
-                    detail_parts.append("Assist features are ready for this clip.")
-                if handtrack_building:
-                    detail_parts.append("Hand support is still preparing in the background.")
-                elif handtrack_ready:
-                    detail_parts.append("Hand support is available for this clip.")
-                if semantic_status.get("training_running"):
-                    detail_parts.append("Personalized assistance is updating in the background.")
-                elif semantic_status.get("model_available"):
-                    detail_parts.append("Personalized assistance is available.")
+            clip_phase, clip_label = "ready", "Ready"
+            clip_detail = "Video and annotation vocabulary are loaded."
         elif video_loaded:
-            clip_phase = "preparing"
-            clip_label = "Preparing" if assist_mode != "full_assist" else "Preparing clip"
-            if required_missing:
-                missing_labels = {
-                    "video": "video",
-                    "nouns": "noun list",
-                    "verbs": "verb list",
-                    "ontology": "ontology",
-                    "videomae": "assist features",
-                }
-                pretty_missing = [missing_labels.get(name, name) for name in required_missing]
-                detail_parts = ["Waiting for: " + ", ".join(pretty_missing) + "."]
-            else:
-                detail_parts = (
-                    ["Loading the current clip."]
-                    if assist_mode != "full_assist"
-                    else ["Waiting for the current clip session to finish preparing."]
-                )
-            if assist_mode == "full_assist" and not videomae_source_ready:
-                detail_parts.append("Full Assist is waiting for the assist model or precomputed clip features.")
-            if assist_mode == "full_assist":
-                if handtrack_building:
-                    detail_parts.append("Hand support is still preparing in the background.")
-                if semantic_status.get("training_running"):
-                    detail_parts.append("Personalized assistance is updating in the background.")
+            clip_phase, clip_label = "preparing", "Preparing"
+            clip_detail = "Load the missing " + ", ".join(required_missing) + " list."
         else:
-            clip_phase = "idle"
-            clip_label = "Load clip"
-            detail_parts = (
-                ["Load a video, noun list, verb list, and ontology."]
-                if assist_mode != "full_assist"
-                else ["Load a video and the required study assets before timing starts."]
-            )
-        clip_detail = " ".join(part for part in detail_parts if str(part or "").strip())
+            clip_phase, clip_label = "idle", "Load clip"
+            clip_detail = "Open a project video to load its configuration and annotations."
         return {
             "assist_mode": assist_mode,
             "video_loaded": video_loaded,
@@ -14002,36 +13909,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._log("hoi_annotation_ready", reason=reason, **state)
 
     def _maybe_warn_full_assist_semantic_unavailable(self, reason: str) -> None:
-        state = self._current_annotation_ready_state()
-        if str(state.get("assist_mode") or "") != "full_assist":
-            self._full_assist_warning_signature = ""
-            return
-        if not bool(state.get("video_loaded")):
-            return
-        if bool(state.get("videomae_source_ready")):
-            self._full_assist_warning_signature = ""
-            return
-        warning_key = json.dumps(
-            {
-                "video": self._normalized_video_path(self.video_path),
-                "mode": state.get("assist_mode"),
-                "missing": list(state.get("required_missing") or []),
-            },
-            sort_keys=True,
-            ensure_ascii=True,
-        )
-        if warning_key == str(getattr(self, "_full_assist_warning_signature", "") or ""):
-            return
-        self._full_assist_warning_signature = warning_key
-        QMessageBox.warning(
-            self,
-            "Full Assist Not Ready",
-            "Full Assist is selected, but the assist model or precomputed clip features are not available yet.\n\n"
-            "Basic timing support can still run, but action suggestions are not fully active.\n\n"
-            "Load one of the following before relying on Full Assist:\n"
-            "- Assist model weights\n"
-            "- Precomputed clip features (.videomae_cache.npz)",
-        )
+        # Legacy integrations may call this. Local inference is no longer required.
+        return
 
     @staticmethod
     def _classify_log_event(event: str) -> Dict[str, Any]:
@@ -14595,7 +14474,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 self._auto_load_local_assets_for_video(fp)
             self._open_autosave(self.current_annotation_path)
         self._log_annotation_ready_state("hoi_load_video_assets")
-        self._maybe_warn_full_assist_semantic_unavailable("hoi_load_video_assets")
         self._mark_query_calibration_dirty()
         self._update_onboarding_banner()
 
@@ -14607,8 +14485,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         Phase 1 Smart Loader (Corrected):
         Saves filtered YOLO boxes into self.raw_boxes to prevent overwriting.
         """
-        if not self._guard_experiment_mode("detection"):
-            return
         # --- 1. Dependency Check ---
         if not self.player.cap:
             QMessageBox.warning(
@@ -19899,50 +19775,22 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._log("hoi_validation_off")
 
     def _experiment_mode_key(self) -> str:
-        combo = getattr(self, "combo_experiment_mode", None)
-        if combo is not None:
-            return str(combo.currentData() or getattr(self, "_experiment_mode", "full_assist"))
-        return str(getattr(self, "_experiment_mode", "full_assist") or "full_assist")
+        return "manual"
 
     def _manual_mode_enabled(self) -> bool:
-        return self._experiment_mode_key() == "manual"
+        return True
 
     def _detection_assist_enabled(self) -> bool:
-        return self._experiment_mode_key() in ("assist", "full_assist")
+        return False
 
     def _semantic_assist_enabled(self) -> bool:
-        return self._experiment_mode_key() == "full_assist"
+        return False
 
     def _timeline_onset_state_for_mode(self) -> Dict[str, str]:
-        if self._manual_mode_enabled():
-            return {
-                "source": "manual_timeline",
-                "status": "confirmed",
-                "note": "Manual mode treats timeline onset edits as confirmed until the user changes them again.",
-            }
-        return {
-            "source": "manual_timeline_provisional",
-            "status": "suggested",
-            "note": "Timeline edits create a provisional onset anchor that should be confirmed or refined during review.",
-        }
+        return {"source": "manual_timeline", "status": "confirmed",
+                "note": "Onset positioned by the annotator."}
 
     def _guard_experiment_mode(self, feature: str) -> bool:
-        if feature == "detection" and self._detection_assist_enabled():
-            return True
-        if feature == "semantic" and self._semantic_assist_enabled():
-            return True
-        if feature == "semantic":
-            QMessageBox.information(
-                self,
-                "Experiment Mode",
-                "Switch to Full Assist to use action suggestions.",
-            )
-        else:
-            QMessageBox.information(
-                self,
-                "Experiment Mode",
-                "Switch to Full Assist to use imported or detected assistance.",
-            )
         return False
 
     def _guard_asset_mutation(
@@ -19987,6 +19835,32 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return False
         return True
 
+    def _hide_local_inference_controls(self) -> None:
+        combo = getattr(self, "combo_experiment_mode", None)
+        if combo is not None:
+            combo.hide()
+        for name in (
+            "act_load_yolo_model", "act_detect_current_frame", "act_detect_selected_action",
+            "act_detect_all_actions", "act_precompute_hand_tracks", "act_incremental_train_yolo",
+            "act_swap_hands", "act_load_videomae_model", "act_load_videomae_cache",
+            "act_load_videomae_verb_list", "act_load_semantic_adapter",
+            "act_review_selected_action_label", "act_auto_apply_action_labels",
+            "act_batch_apply_action_labels", "btn_detect", "btn_detect_action",
+            "btn_object_tools", "btn_suggest_action_label", "next_query_card",
+            "lbl_hand_support_status", "btn_inline_detect_objects",
+        ):
+            control = getattr(self, name, None)
+            if control is not None:
+                control.setEnabled(False)
+                control.setVisible(False)
+        shortcut = getattr(self, "sc_detect", None)
+        if shortcut is not None:
+            shortcut.setEnabled(False)
+        for name in ("detect_menu", "assist_menu"):
+            menu = getattr(self, name, None)
+            if menu is not None:
+                menu.menuAction().setVisible(False)
+
     def _apply_experiment_mode_ui(self) -> None:
         mode = self._experiment_mode_key()
         self._experiment_mode = mode
@@ -19994,12 +19868,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         semantic_enabled = self._semantic_assist_enabled()
 
         for obj in (
-            getattr(self, "act_import_yolo_boxes", None),
             getattr(self, "act_load_yolo_model", None),
             getattr(self, "act_detect_current_frame", None),
             getattr(self, "act_detect_selected_action", None),
             getattr(self, "act_detect_all_actions", None),
-            getattr(self, "act_load_hands_xml", None),
             getattr(self, "act_incremental_train_yolo", None),
             getattr(self, "act_swap_hands", None),
             getattr(self, "btn_detect", None),
@@ -20045,34 +19917,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._apply_inline_editor_mode_visibility()
 
     def _confirm_save_before_mode_switch(self, previous_mode: str, next_mode: str) -> bool:
-        if not self._workspace_has_annotation_state():
-            return True
-        if not self._hoi_has_unsaved_changes():
-            return True
-
-        mode_labels = {
-            "manual": "Manual",
-            "full_assist": "Full Assist",
-        }
-        previous_label = mode_labels.get(str(previous_mode or "").strip(), str(previous_mode or "").strip() or "Current")
-        next_label = mode_labels.get(str(next_mode or "").strip(), str(next_mode or "").strip() or "New")
-
-        reply = QMessageBox.question(
-            self,
-            "Save Before Switching Mode",
-            (
-                f"You are switching from {previous_label} to {next_label}.\n\n"
-                "The current HOI annotation workspace has unsaved changes.\n"
-                "Save before switching mode?"
-            ),
-            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-            QMessageBox.Save,
-        )
-        if reply == QMessageBox.Cancel:
-            return False
-        if reply == QMessageBox.Save:
-            self._save_annotations_json()
-            return not self._hoi_has_unsaved_changes()
+        # Kept for old integrations; the editor no longer changes mode.
         return True
 
     def _confirm_save_before_loading_video(self, target_video: str) -> bool:
@@ -20101,34 +19946,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return True
 
     def _on_experiment_mode_changed(self, _index: int) -> None:
-        if bool(getattr(self, "_experiment_mode_change_guard", False)):
-            return
-        previous_mode = str(getattr(self, "_experiment_mode", "full_assist") or "full_assist")
-        next_mode = self._experiment_mode_key()
-        if next_mode != previous_mode:
-            if not self._confirm_save_before_mode_switch(previous_mode, next_mode):
-                combo = getattr(self, "combo_experiment_mode", None)
-                if combo is not None:
-                    idx = combo.findData(previous_mode)
-                    if idx >= 0:
-                        self._experiment_mode_change_guard = True
-                        try:
-                            combo.setCurrentIndex(idx)
-                        finally:
-                            self._experiment_mode_change_guard = False
-                return
+        self._experiment_mode = "manual"
         self._apply_experiment_mode_ui()
-        if not self._semantic_assist_enabled():
-            self._clear_all_runtime_suggestions()
-            if self.selected_event_id is not None:
-                event = self._find_event_by_id(self.selected_event_id)
-                if event is not None:
-                    self._refresh_semantic_suggestions_for_event(self.selected_event_id, event)
-                    self._update_status_label()
-        self._update_onboarding_banner()
-        self._log("hoi_experiment_mode_changed", mode=self._experiment_mode_key())
-        self._log_annotation_ready_state("hoi_experiment_mode_changed")
-        self._maybe_warn_full_assist_semantic_unavailable("hoi_experiment_mode_changed")
 
     def _hoi_state_signature(self) -> str:
         payload = {
@@ -20984,8 +20803,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _load_hands_xml(self):
         """[Fix] Load hand bbox XML with Auto-Alignment for clipped videos."""
-        if not self._guard_experiment_mode("detection"):
-            return
         fp, _ = QFileDialog.getOpenFileName(
             self, "Load hand bbox XML", "", "XML Files (*.xml);;All Files (*)"
         )

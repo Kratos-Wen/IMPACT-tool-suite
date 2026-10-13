@@ -64,3 +64,5 @@ Event intervals include both Start and End frames. Events for the same hand must
 Importing sparse or hands-only annotations retains the active project vocabulary.
 
 A newly drawn manual entity stays visible and editable on its creation frame before it is assigned to the event. Select its ID under **Noun** or **Instrument** to bind it. Label entry and instance selectors suggest substring and spelling matches. Click a suggestion; in the box-label dialog, **Tab** accepts the highlighted suggestion. Exact names and explicit instance IDs take precedence over suggestions.
+
+The editor uses one manual annotation workflow. Project videos load their configuration and existing annotations; imported events and boxes remain editable. SAM click and background correction are optional explicit actions. Local automatic detection, action ranking and mode switching are no longer part of the desktop workflow. Saved projects using older modes reopen in the manual workflow.

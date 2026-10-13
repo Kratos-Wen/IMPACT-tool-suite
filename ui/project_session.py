@@ -57,8 +57,7 @@ class ProjectSessionMixin:
                 if not Path(profile).is_file():raise ValueError('The previous project profile is unavailable.')
                 from core.project_profile import activate_project_profile
                 activate_project_profile(profile)
-            if data.get('mode') in ('manual','full_assist'):
-                self._set_experiment_mode_key(data['mode'])
+            self._set_experiment_mode_key('manual')
             if not self._load_video(str(video),resume_annotation=annotation):return False
             if int(self.player.frame_count)!=data['frames'] or abs(float(self.player.frame_rate)-data['fps'])>0.01:
                 raise ValueError('The previous video timeline has changed. Check the project before editing.')

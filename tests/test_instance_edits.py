@@ -39,7 +39,9 @@ for name in ['']:
  e=make();assert e._event_visible_object_ids()=={'0','2'}
  assert e._event_box_visible({'id':0,'label':'tool'})
  assert not e._event_box_visible({'id':1,'label':'screw'})
- assert e._event_box_visible({'id':123,'label':'right_hand'})
+ # Unselected machine hands stay hidden; actual human boxes remain visible.
+ assert not e._event_box_visible({'id':123,'label':'right_hand','source':'model'})
+ assert e._event_box_visible({'id':123,'label':'right_hand','source':'manual_box_edit'})
  e.selected_event_id=None;assert not e._event_box_visible({'id':2,'label':'screw'})
  e=make();b=dict(e.raw_boxes[1],frame=10,x1=5.);e._on_box_edited(2,b)
  assert e.raw_boxes[1]['id']==2 and e.raw_boxes[1]['x1']==5.
