@@ -65,12 +65,18 @@ class FrameReviewMixin:
             from core.box_import import constrained_import_mode
             action.setEnabled(constrained_import_mode(value,PROFILE)==value)
 
+    def _manual_bbox_index(self):
+        rows = self.raw_boxes
+        revision = (id(rows), len(rows), getattr(self, '_bbox_revision', 0))
+        if getattr(self, '_bbox_mark_index_key', None) != revision:
+            self._bbox_mark_index = BoxIndex(rows, self._normalize_hand_label, include=manually_annotated)
+            self._bbox_mark_index_key = revision
+        return self._bbox_mark_index, revision
+
     def _bbox_frame_markers(self):
         hand=self._selected_hand_data() or {};s=hand.get('interaction_start');e=hand.get('interaction_end')
         if type(s) is not int or type(e) is not int or not self.selected_hand_label:return []
-        rows=self.raw_boxes;revision=(id(rows),len(rows),getattr(self,'_bbox_revision',0))
-        if getattr(self,'_bbox_mark_index_key',None)!=revision:
-            self._bbox_mark_index=BoxIndex(rows,self._normalize_hand_label,include=manually_annotated);self._bbox_mark_index_key=revision
+        index, revision = self._manual_bbox_index()
         records=getattr(self,'frame_review',{})
         key=(revision,id(records),getattr(self,'_query_state_revision',0),self.selected_event_id,self.selected_hand_label,s,e,self.start_offset)
         if getattr(self,'_bbox_mark_cache_key',None)==key:return self._bbox_mark_cache
@@ -273,14 +279,16 @@ class FrameReviewMixin:
 
     def _frame_review_issues(self):
         records=getattr(self,'frame_review',{});issues=[];fps=float(self.player.frame_rate or 15)
-        cache_key=(getattr(self,'_bbox_revision',0),getattr(self,'_query_state_revision',0),id(records),len(self.raw_boxes),len(self.events),fps)
+        cache_key=(id(self.raw_boxes),int(self.start_offset),getattr(self,'_bbox_revision',0),getattr(self,'_query_state_revision',0),id(records),len(self.raw_boxes),len(self.events),fps)
         if getattr(self,'_frame_review_cache_key',None)==cache_key:return list(self._frame_review_cache)
-        index={}
-        for box in self.raw_boxes:
-            frame=int(box.get('orig_frame',-1))+int(self.start_offset)
-            hand=self._normalize_hand_label(box.get('label'))
-            entity='H:'+hand if hand else 'O:'+str(box.get('id'))
-            index.setdefault((frame,entity),[]).append(box)
+        # Geometry indexing depends on bbox changes, not on every review or
+        # semantic edit. Query only required frames through the shared index.
+        index = {}
+        def boxes_at(frame, entity):
+            key = (frame, entity)
+            if key not in index:
+                index[key] = self._boxes_for_review(entity, frame)
+            return index[key]
         for event in self.events:
             for key,hand in event.get('hoi_data',{}).items():
                 s=hand.get('interaction_start');e=hand.get('interaction_end');o=hand.get('functional_contact_onset')
@@ -289,7 +297,7 @@ class FrameReviewMixin:
                 valid=[]
                 for text,row in records.items():
                     frame=int(text)
-                    if s<=frame<=e and all(box_observed(row.get(entity),index.get((frame,entity),[])) for entity in self._review_entities(hand,key,frame)):valid.append(frame)
+                    if s<=frame<=e and all(box_observed(row.get(entity),boxes_at(frame,entity)) for entity in self._review_entities(hand,key,frame)):valid.append(frame)
                 uid=reference_id(hand,self._assembly_data(),s)
                 extra=list(hand.get('required_review_frames',[]))
                 evidence=hand.get('_event_extra',{}).get('anomaly_evidence',{})
@@ -298,7 +306,7 @@ class FrameReviewMixin:
                 # Hand-drawn SOE/anomaly boxes count without a separate review click.
                 required={s,e,*extra}
                 if type(o) is int:required.add(o)
-                valid += [f for f in required if s<=f<=e and all(box_observed(records.get(str(f),{}).get(entity),index.get((f,entity),[])) for entity in self._review_entities(hand,key,f))]
+                valid += [f for f in required if s<=f<=e and all(box_observed(records.get(str(f),{}).get(entity),boxes_at(f,entity)) for entity in self._review_entities(hand,key,f))]
                 for frame in missing_frames(s,e,o,valid,fps,extra=extra):
                     issues.append(dict(event_id=event['event_id'],hand=key,field='bbox_evidence',code='keyframe_boxes_'+str(frame),frame=frame,missing=['Keyframe boxes missing or not viewed']))
         result=sorted(issues,key=lambda x:(x['frame'],str(x['event_id']),x['hand']))

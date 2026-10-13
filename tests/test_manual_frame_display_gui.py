@@ -50,5 +50,23 @@ w._set_selected_event(w.events[0]['event_id'],'Left_hand')
 assert len([b for b in w.raw_boxes if b['label']=='Left_hand'])==20000
 assert {m['frame'] for m in w._bbox_frame_markers()}=={12,13}
 assert not w._event_box_visible(handbox(14))
+# Review changes must not rescan dense geometry or rebuild all event ticks.
+class CountedRows(list):
+    scans = 0
+    def __iter__(self):
+        self.scans += 1
+        return super().__iter__()
+w.raw_boxes = CountedRows(w.raw_boxes)
+w._manual_bbox_index()
+w._frame_review_issues()
+scans = w.raw_boxes.scans
+from unittest.mock import patch
+with patch.object(w, '_bbox_frame_markers', side_effect=AssertionError('Hand display rebuilt all event markers')):
+    for _ in range(50):
+        w._bump_query_state_revision()
+        w._frame_review_issues()
+        assert not w._event_box_visible(handbox(14))
+# handbox() intentionally iterates; the indexed checks must add no scans.
+assert w.raw_boxes.scans == scans + 50
 w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.deleteLater();app.processEvents()
 print('DENSE_CANDIDATES_MANUAL_ONLY_TICKS_SELECTED_HAND_FRAMES_ROUNDTRIP_PASS')

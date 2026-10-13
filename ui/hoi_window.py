@@ -19196,7 +19196,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 return False
             required = {start, hand.get('functional_contact_onset'), end}
             required.update(hand.get('required_review_frames', []))
-            return frame in required or any(marker['frame'] == frame for marker in self._bbox_frame_markers())
+            if frame in required:
+                return True
+            index, _revision = self._manual_bbox_index()
+            entities = index.by_frame.get(frame - int(self.start_offset), {})
+            return any(entity in entities for entity in self._review_entities(hand, hand_key, frame))
         frame = int(box.get('orig_frame',self._assembly_frame()-self.start_offset)) + int(self.start_offset)
         uid = box.get('id')
         return uid is not None and active_id(self._assembly_data(),uid,frame)==uid and str(uid) in self._event_visible_object_ids(frame)
