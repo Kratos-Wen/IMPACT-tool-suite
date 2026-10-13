@@ -55,7 +55,8 @@ requests,notes=w._plan_correction_batch(chosen,begin,end)
 assert len(requests)==6
 assert next(r for r in requests if r['entity_kind']=='object' and r['id']==0 and r['direction']==1)['end']==11
 assert next(r for r in requests if r['entity_kind']=='object' and r['id']==8 and r['direction']==1)['end']==12
-assert any(r['entity_kind']=='hand' and r['id']==0 for r in requests)
+from core.hand_identity import hand_box_id
+assert any(r['entity_kind']=='hand' and r['id']==hand_box_id('Left_hand') for r in requests)
 # A human-confirmed invisible frame is an anchor even though it has no box.
 before_boxes=copy.deepcopy(w.raw_boxes)
 w.raw_boxes=[b for b in w.raw_boxes if not (b['label']=='Left_hand' and b['orig_frame']==14)]

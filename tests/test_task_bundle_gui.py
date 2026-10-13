@@ -63,7 +63,9 @@ with tempfile.TemporaryDirectory() as d:
   assert time.monotonic()<until
   app.processEvents();time.sleep(.002)
  assert second['status']=='applied','An unrelated event must not invalidate tracking'
- assert next(b for b in w.raw_boxes if b['label']=='Left_hand')==old_boxes[0]
+ from core.hand_identity import canonicalize_hand_box
+ expected_hand=canonicalize_hand_box(dict(old_boxes[0]),w._normalize_hand_label)
+ assert next(b for b in w.raw_boxes if b['label']=='Left_hand')==expected_hand
  assert any(b['id']==0 and b['label']=='part' and b['orig_frame']==1 for b in w.raw_boxes)
  # This fixture deliberately has an incomplete event. Release its recovery
  # lock explicitly before TemporaryDirectory removes files on Windows.

@@ -125,6 +125,7 @@ from core.videomae_v2_logic import (
 )
 
 _NO_FIELD_VALUE = object()
+from core.hand_identity import hand_box_id, hand_entity_id, canonicalize_hand_box
 from core.project_profile import PROFILE as _PROJECT_PROFILE
 _DEFAULT_ANOMALY_LABEL = 'normal'
 _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or [_DEFAULT_ANOMALY_LABEL])
@@ -4732,7 +4733,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         self._push_undo()
         new_rb = {
-            "id": self.box_id_counter,
+            "id": hand_box_id(hand_key),
             "orig_frame": int(target_orig),
             "label": hand_key,
             "source": "materialized_handtrack",
@@ -4742,7 +4743,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             "x2": float(box.get("x2", 0.0) or 0.0),
             "y2": float(box.get("y2", 0.0) or 0.0),
         }
-        self.box_id_counter += 1
         self.raw_boxes.append(new_rb)
         self._selected_edit_box = dict(new_rb)
         self._rebuild_bboxes_from_raw()
@@ -16015,7 +16015,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.raw_boxes = keep
         for candidate in applied_candidates:
             new_rb = {
-                "id": self.box_id_counter,
+                "id": hand_box_id(self._normalize_hand_label(candidate.get("label"))),
                 "orig_frame": frame_idx - self.start_offset,
                 "label": candidate.get("label"),
                 "source": candidate.get("source") or "model_hand",
@@ -16028,7 +16028,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             }
             new_rb["model_score"] = self._hand_initial_box_score(new_rb)
             self.raw_boxes.append(new_rb)
-            self.box_id_counter += 1
 
         self._rebuild_bboxes_from_raw()
         self._bump_bbox_revision()
@@ -18302,7 +18301,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         box_class_id = int(box_class_id)
                     except Exception:
                         pass
-                if is_actor or obj_id is None:
+                if is_actor:
+                    bid = hand_box_id(label)
+                elif obj_id is None:
                     bid = self.box_id_counter
                     self.box_id_counter += 1
                 else:
@@ -18924,6 +18925,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             support_track = self._handtrack_track(hand_key)
             tracks[track_id] = {
                 "category": side_key,
+                "entity_id": hand_entity_id(hand_key),
+                "hand_id": hand_entity_id(hand_key),
                 "object_id": None,
                 "boxes": explicit_boxes,
                 "boxes_source": "raw_boxes",
@@ -20373,8 +20376,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             is_new_object = False
             if obj_id is None:
                 if is_hand_box:
-                    obj_id = self.box_id_counter
-                    self.box_id_counter += 1
+                    obj_id = hand_box_id(label_txt)
                 else:
                     obj_id = self.object_id_counter
                     is_new_object = True
@@ -20836,7 +20838,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._review_boxes_index_source=None
         self._label_suggestions_key=None
         self.bboxes = {}
+        selected = getattr(self, "_selected_edit_box", None)
+        if isinstance(selected, dict):
+            canonicalize_hand_box(selected, self._normalize_hand_label)
         for b in self.raw_boxes:
+            canonicalize_hand_box(b, self._normalize_hand_label)
             target_frame = b.get("orig_frame", 0) + self.start_offset
             if self.end_frame is not None and target_frame > self.end_frame:
                 continue
@@ -20987,7 +20993,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     try:
                         out.append(
                             {
-                                "id": self.box_id_counter,
+                                "id": hand_box_id(label),
                                 "orig_frame": frame,
                                 "label": label,
                                 "source": "hands_xml",
@@ -20998,7 +21004,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                                 "y2": float(box.attrib.get("ybr")),
                             }
                         )
-                        self.box_id_counter += 1
                     except (ValueError, TypeError):
                         continue
 
@@ -21019,7 +21024,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     try:
                         out.append(
                             {
-                                "id": self.box_id_counter,
+                                "id": hand_box_id(label),
                                 "orig_frame": int(box.attrib.get("frame")),
                                 "label": label,
                                 "source": "hands_xml",
@@ -21030,7 +21035,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                                 "y2": float(box.attrib.get("ybr")),
                             }
                         )
-                        self.box_id_counter += 1
                     except Exception:
                         continue
 
@@ -21663,9 +21667,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 boxes.sort(key=lambda x: x["orig_frame"])
 
                 track_node = ET.SubElement(
-                    root, "track", id=str(self.box_id_counter), label=label
+                    root, "track", id=str(0 if str(label).lower() == "left_hand" else 1), label=label
                 )
-                self.box_id_counter += 1
 
                 for b in boxes:
                     ET.SubElement(
