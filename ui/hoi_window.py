@@ -10376,7 +10376,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._task_resume_path = str(resume) if resume else ""
         if data.get("status") != "ready" and not (resume and resume.is_file()):
             self._apply_profile_libraries()
-            QMessageBox.warning(self, "Task not ready", data.get("reason") or "Assets or timeline verification are pending. No annotations imported.")
+            self._open_autosave("")
+            self._load_optional_task_hands(data, paths)
+            QMessageBox.warning(self, "Task not ready", data.get("reason") or "Assets or timeline verification are pending. No event annotations imported.")
             return True
         expected = data.get("frame_count")
         if expected is not None and int(expected) != int(self.player.frame_count):
@@ -10409,6 +10411,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._log("hoi_task_bundle_loaded", manifest=str(task["manifest"]), annotations=str(annotation))
         self._update_onboarding_banner()
         self._open_autosave(str(annotation))
+        self._load_optional_task_hands(data, paths)
+        if checkpoint and not checkpoint.is_file():
+            QMessageBox.warning(self, "Tracking weights missing", "Annotations loaded. Download the bundle weights before using Track Correction.")
+        return True
+
+    def _load_optional_task_hands(self, data, paths):
         hand_asset = paths.get("hand_tracks")
         if hand_asset and hand_asset.is_file() and self._automatic_box_import_mode() != "none":
             from core.hand_assets import read_bound_hands, merge_hand_candidates
@@ -10427,9 +10435,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 self._log("hoi_task_hands_loaded", path=str(hand_asset), added=added)
             except (ValueError, OSError, TypeError) as ex:
                 QMessageBox.warning(self, "Hand candidates unavailable", str(ex))
-        if checkpoint and not checkpoint.is_file():
-            QMessageBox.warning(self, "Tracking weights missing", "Annotations loaded. Download the bundle weights before using Track Correction.")
-        return True
 
     def _auto_load_local_assets_for_video(self, video_path: str) -> None:
         path = str(video_path or "").strip()

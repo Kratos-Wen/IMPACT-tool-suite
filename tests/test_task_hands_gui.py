@@ -39,4 +39,11 @@ with tempfile.TemporaryDirectory() as directory:
   except ValueError:pass
  assert not warnings,warnings
  w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.player.release_media()
+ hands.write_text(xml)
+ task=json.loads((root/'task.json').read_text());task['status']='pending';task.pop('annotations')
+ atomic_json(root/'task.json',task,backup=False)
+ w=HOIWindow();w._show_quick_start_on_startup=False;assert w._load_video(str(video));w._autosave_timer.stop()
+ assert any(b['orig_frame']==10 and b['source']=='hand_sidecar_candidate' for b in w.raw_boxes),'Pending task did not load bound hand XML'
+ assert all(b['id']==-1 for b in w.raw_boxes)
+ w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.player.release_media()
 print('TASK_HAND_XML_AUTOMATIC_LOAD_BINDING_HUMAN_PRESERVATION_SUPPRESSION_IDEMPOTENCE_PASS')
