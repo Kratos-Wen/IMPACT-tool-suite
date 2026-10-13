@@ -230,6 +230,21 @@ class BaseTimelineRow(QWidget):
             p.setPen(edge_pen)
             p.drawRect(rect)
 
+    def _major_grid_step(self, fps: int) -> int:
+        """Keep readable tick spacing even when an entire long video is visible."""
+        available = max(1, self.width() - self.get_gutter())
+        required = 60 * max(1, self.get_span()) / available
+        seconds, scale = 1, 1
+        while seconds * max(1, fps) < required:
+            if seconds == scale:
+                seconds = 2 * scale
+            elif seconds == 2 * scale:
+                seconds = 5 * scale
+            else:
+                scale *= 10
+                seconds = scale
+        return seconds * max(1, fps)
+
     def _draw_time_grid(self, p: QPainter, start: int, end: int, fps: int):
         g = self.get_gutter()
         span = self.get_span()
@@ -257,7 +272,7 @@ class BaseTimelineRow(QWidget):
                 x = self.frame_to_x(f)
                 p.drawLine(x, 8, x, self.height() - 4)
 
-        s_major = fps
+        s_major = self._major_grid_step(fps)
         p.setPen(QPen(QColor(160, 160, 160)))
         first = (start // s_major) * s_major
         for f in range(first, end + s_major, s_major):

@@ -77,6 +77,7 @@ jobs:
       - run: python tests/test_autosave_gui.py
       - run: python tests/test_editor_snapshot.py
       - run: python tests/test_editor_performance_gui.py
+      - run: python tests/test_completion_render_cache_gui.py
       - run: python tests/test_video_preview_gui.py
       - run: python tests/test_save_guard_gui.py
       - run: python tests/test_offset_save_gui.py

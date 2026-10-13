@@ -3566,10 +3566,13 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             "danger": ("#FEF3F2", "#B42318"),
         }
         bg, fg = palette.get(tone, palette["neutral"])
-        widget.setText(text)
-        widget.setStyleSheet(
+        if widget.text() != text:
+            widget.setText(text)
+        stylesheet = (
             f"background: {bg}; color: {fg}; border: 1px solid {bg}; border-radius: 999px; padding: 3px 10px; font-weight: 600;"
         )
+        if widget.styleSheet() != stylesheet:
+            widget.setStyleSheet(stylesheet)
 
     def _set_status_card_tone(self, widget: Optional[QFrame], tone: str = "neutral") -> None:
         if widget is None:
@@ -3582,9 +3585,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             "danger": ("#FEF2F2", "#FCA5A5"),
         }
         bg, border = palette.get(tone, palette["neutral"])
-        widget.setStyleSheet(
+        stylesheet = (
             f"background: {bg}; border: 1px solid {border}; border-radius: 10px;"
         )
+        if widget.styleSheet() != stylesheet:
+            widget.setStyleSheet(stylesheet)
 
     def _focus_inspector_tab(self, name: str) -> None:
         tabs = getattr(self, "inspector_tabs", None)
@@ -8834,7 +8839,36 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._update_overlay(self.player.current_frame)
         self._update_hoi_titles()
 
+    def _completion_render_inputs(self):
+        """Content snapshots protect caches even when an editor mutates data in place.
+
+        Dense geometry is already revision indexed. Never copy it into UI caches.
+        Assembly resolution changes only at state/merge boundaries, not every frame.
+        """
+        assembly = self._assembly_data()
+        boundaries = {row.get("frame") for key in ("states", "merges")
+                      for row in assembly.get(key, []) if type(row.get("frame")) is int}
+        frame_bucket = sum(frame <= self._assembly_frame() for frame in boundaries)
+        ontology = getattr(self, "hoi_ontology", None)
+        return (
+            self.events, getattr(self, "event_draft", {}), self.selected_event_id,
+            self.selected_hand_label, self.global_object_map, self.id_to_category,
+            assembly, getattr(self, "frame_review", {}), _PROJECT_PROFILE,
+            self.actors_config, [(verb.name, verb.color_name) for verb in self.verbs],
+            ontology.to_dict() if ontology is not None else None,
+            self._noun_model_trial(), self._manual_mode_enabled(),
+            id(self.raw_boxes), len(self.raw_boxes), getattr(self, "_bbox_revision", 0),
+            getattr(self, "_query_state_revision", 0), self.start_offset,
+            self.player.frame_count, self.player.frame_rate, frame_bucket,
+        )
+
     def _hoi_segments_for_hand(self, hand_key: str) -> List[Dict]:
+        inputs = self._completion_render_inputs()
+        caches = getattr(self, "_timeline_segment_render_cache", {})
+        cached = caches.get(hand_key)
+        if cached and cached[0] == inputs:
+            return [dict(segment, color=QColor(segment["color"])) for segment in cached[1]]
+        self._frame_review_cache_key = None
         segs = []
         for ev in self.events:
             h = ev.get("hoi_data", {}).get(hand_key, {})
@@ -8880,7 +8914,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 color = QColor(120, 120, 120)
             seg["color"] = color
             prev_color = color
-        return segs
+        caches[hand_key] = (copy.deepcopy(self._completion_render_inputs()), segs)
+        self._timeline_segment_render_cache = caches
+        return [dict(segment, color=QColor(segment["color"])) for segment in segs]
 
     def _hand_has_segment(self, ev: dict, hand_key: str) -> bool:
         h = ev.get("hoi_data", {}).get(hand_key, {})
@@ -12447,6 +12483,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return cleaned_rows
 
     def _refresh_sparse_evidence_snapshots(self) -> None:
+        inputs = self._completion_render_inputs()
+        if getattr(self, "_sparse_evidence_render_inputs", None) == inputs:
+            return
         for event in list(self.events or []):
             hoi_data = event.get("hoi_data", {}) or {}
             if not isinstance(hoi_data, dict):
@@ -12459,6 +12498,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         for hand_key, hand_data in list((getattr(self, "event_draft", {}) or {}).items()):
             if isinstance(hand_data, dict):
                 self._compute_sparse_evidence_state(hand_data, persist=True)
+        self._sparse_evidence_render_inputs = copy.deepcopy(self._completion_render_inputs())
 
     def _sync_event_videomae_suggestions(
         self, event_id: int, event: Optional[dict], candidates: List[dict],
@@ -17605,13 +17645,20 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             QMessageBox.critical(self, "Error", f"Save failed:\n{str(ex)}")
 
     def _collect_incomplete_hoi(self) -> List[dict]:
+        inputs = self._completion_render_inputs()
+        cached = getattr(self, "_incomplete_render_cache", None)
+        if cached and cached[0] == inputs:
+            return [dict(issue, missing=list(issue.get("missing", []))) for issue in cached[1]]
+        self._frame_review_cache_key = None
         from core.completion_review import collect_review_issues
-        return self._frame_review_issues() + self._policy_review_issues() + collect_review_issues(
+        issues = self._frame_review_issues() + self._policy_review_issues() + collect_review_issues(
             self.events, self.actors_config,
             lambda data, hand: self._hand_completion_state(data, hand_key=hand),
             object_ids=set(self.global_object_map.values()),
             frame_count=getattr(self.player, "frame_count", None),
         )
+        self._incomplete_render_cache = (copy.deepcopy(self._completion_render_inputs()), issues)
+        return [dict(issue, missing=list(issue.get("missing", []))) for issue in issues]
 
     def _check_incomplete_hoi(self, context: str = "save") -> tuple:
         issues = self._collect_incomplete_hoi()
