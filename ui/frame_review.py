@@ -4,7 +4,7 @@ from PyQt5.QtCore import Qt,QTimer
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import QMessageBox,QShortcut,QInputDialog,QActionGroup
 from bisect import bisect_left,bisect_right
-from core.bbox_markers import BoxIndex,state as marker_state
+from core.bbox_markers import BoxIndex,state as marker_state,manually_annotated
 import os
 from core.frame_review import signature,valid_record,missing_frames,box_observed
 from core.project_profile import PROFILE
@@ -70,7 +70,7 @@ class FrameReviewMixin:
         if type(s) is not int or type(e) is not int or not self.selected_hand_label:return []
         rows=self.raw_boxes;revision=(id(rows),len(rows),getattr(self,'_bbox_revision',0))
         if getattr(self,'_bbox_mark_index_key',None)!=revision:
-            self._bbox_mark_index=BoxIndex(rows,self._normalize_hand_label);self._bbox_mark_index_key=revision
+            self._bbox_mark_index=BoxIndex(rows,self._normalize_hand_label,include=manually_annotated);self._bbox_mark_index_key=revision
         records=getattr(self,'frame_review',{})
         key=(revision,id(records),getattr(self,'_query_state_revision',0),self.selected_event_id,self.selected_hand_label,s,e,self.start_offset)
         if getattr(self,'_bbox_mark_cache_key',None)==key:return self._bbox_mark_cache

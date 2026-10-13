@@ -16194,7 +16194,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         norm_hand = self._normalize_hand_label(hand_key or self.selected_hand_label)
         if not norm_hand:
             return False
-        return bool(self._frame_hand_box(norm_hand, frame_idx))
+        box = self._frame_hand_box(norm_hand, frame_idx)
+        return bool(box and self._event_box_visible(box))
 
     def _frame_has_object_boxes(self, frame_idx: int) -> bool:
         frame_idx = int(frame_idx)
@@ -19179,8 +19180,23 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return ids
 
     def _event_box_visible(self, box):
-        if self._normalize_hand_label(box.get("label")):
-            return True
+        hand_key = self._normalize_hand_label(box.get("label"))
+        if hand_key:
+            from core.bbox_markers import manually_annotated
+            if manually_annotated(box):
+                return True
+            # Retain dense candidates for later tracking, but show them only at
+            # the selected event's SOE, explicit extra frames or manual bbox frames.
+            if self.selected_event_id is None or hand_key != self.selected_hand_label:
+                return False
+            hand = self._selected_hand_data() or {}
+            frame = int(box.get('orig_frame', self._assembly_frame()-self.start_offset)) + int(self.start_offset)
+            start, end = hand.get('interaction_start'), hand.get('interaction_end')
+            if type(start) is not int or type(end) is not int or not start <= frame <= end:
+                return False
+            required = {start, hand.get('functional_contact_onset'), end}
+            required.update(hand.get('required_review_frames', []))
+            return frame in required or any(marker['frame'] == frame for marker in self._bbox_frame_markers())
         frame = int(box.get('orig_frame',self._assembly_frame()-self.start_offset)) + int(self.start_offset)
         uid = box.get('id')
         return uid is not None and active_id(self._assembly_data(),uid,frame)==uid and str(uid) in self._event_visible_object_ids(frame)
@@ -19557,6 +19573,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             (("hand",self._normalize_hand_label(b.get("label"))) if self._normalize_hand_label(b.get("label")) else b["id"]): b
             for b in self._frame_boxes_with_cached_hands(frame)
             if isinstance(b, dict) and "id" in b
+            and (not self._normalize_hand_label(b.get("label")) or self._event_box_visible(b))
         }
 
         for r in display_rels:

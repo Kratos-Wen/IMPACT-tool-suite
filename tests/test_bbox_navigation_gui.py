@@ -33,7 +33,7 @@ class CountedRows(list):
 
 payload=dict(schema='hoi-annotation',video_id='fixture',fps=15,frame_count=20000,
     object_library={'1001':dict(label='part_1',category='part'),'1002':dict(label='tool_1',category='tool')},
-    tracks={'T_OBJ_1001':dict(object_id=1001,category='part',boxes=[dict(frame=f,bbox=[1,2,8,9],source='automatic') for f in (10,20,30)]),
+    tracks={'T_OBJ_1001':dict(object_id=1001,category='part',boxes=[dict(frame=f,bbox=[1,2,8,9],source='automatic' if f==20 else 'manual_box_add') for f in (10,20,30)]),
             'T_OBJ_1002':dict(object_id=1002,category='tool',boxes=[dict(frame=20,bbox=[12,2,18,9],source='manual_box_add')]),
             'T_LEFT_HAND':dict(category='Left_hand',boxes=[dict(frame=f,bbox=[5,12,12,20],source='automatic') for f in (10,20,30)])},
     hoi_events={'left_hand':[dict(event_id='fixture',start_frame=0,contact_onset_frame=0,end_frame=100,verb='hold',noun_object_id=1001,instrument_object_id=1002)],'right_hand':[]})
@@ -45,7 +45,7 @@ assert any(m['role']=='I' and m['state']=='manual' for m in markers)
 hand=w.event_draft['Left_hand'];uid=w._hand_noun_object_id(hand);tool=w._hand_instrument_object_id(hand)
 rows=w._boxes_for_review('O:'+str(uid),20)
 w.frame_review={'20':{'O:'+str(uid):dict(state='verified',signature=signature(rows))}};w._bump_query_state_revision()
-assert any(m['role']=='O' and m['frame']==20 and m['state']=='viewed' for m in w._bbox_frame_markers())
+assert not any(m['role']=='O' and m['frame']==20 for m in w._bbox_frame_markers()), 'Viewing a machine box must not create a manual tick'
 timeline=w.hoi_timeline;row=timeline.actor_rows['Left_hand'];row.resize(900,48);timeline._set_view(0,100)
 assert not hasattr(timeline,'box_strip')
 assert timeline.layout().count()==2,'Only existing event rows and view controls may occupy space'
@@ -69,7 +69,7 @@ assert w.combo_inline_instrument.currentData() == tool
 with patch.object(w,'isVisible',return_value=True),patch.object(w,'isActiveWindow',return_value=True),patch.object(row,'update') as repaint:
     w._observed_frame_context=w._observation_context();w._observe_displayed_boxes()
     assert repaint.called
-    assert any(m['role']=='H' and m['frame']==20 and m['state']=='viewed' for m in w._bbox_frame_markers())
+    assert not any(m['role']=='H' for m in w._bbox_frame_markers()), 'Viewed hand tracking must not create ticks'
 row.grab().save(str(Path(os.environ.get('IMPACT_HOI_SETTINGS_DIR','/tmp')).parent/'bbox_event_preview.png'))
 w._jump_bbox_direction(1);assert w.player.current_frame==30
 w._jump_bbox_direction(-1);assert w.player.current_frame==20
@@ -80,7 +80,7 @@ for mode in ('hands','none','all'):
     assert w._hand_instrument_object_id(w.event_draft['Left_hand'])==tool
     assert any(b['source']=='manual_box_add' for b in w.raw_boxes)
     assert any(w._normalize_hand_label(b['label']) for b in w.raw_boxes)==(mode!='none')
-    assert any(b['id']==uid and not w._normalize_hand_label(b['label']) for b in w.raw_boxes)==(mode=='all')
+    assert any(b['id']==uid and b['orig_frame']==20 and not w._normalize_hand_label(b['label']) for b in w.raw_boxes)==(mode=='all')
 assert payload['object_library']['1001']['label']=='part_1', 'Import changed the source draft'
 row=timeline.actor_rows['Left_hand'];row.resize(900,48)
 # Dense background tracks must not leak into event ticks or cause rescans per paint.
