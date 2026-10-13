@@ -70,8 +70,10 @@ jobs:
       - run: python tests/test_singleton_instances.py
       - run: python tests/test_singleton_instances_gui.py
       - run: python tests/test_noun_aliases.py
+      - run: python tests/test_taxonomy_cache.py
       - run: python tests/test_task_assets.py
       - run: python tests/test_task_bundle_gui.py
+      - run: python tests/test_task_hands_gui.py
       - run: python tests/test_current_annotation.py
       - run: python tests/test_safe_storage.py
       - run: python tests/test_autosave_gui.py

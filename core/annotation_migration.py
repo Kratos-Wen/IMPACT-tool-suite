@@ -1,5 +1,6 @@
 """Lossless geometry import adapter; project semantics come from a private profile."""
 import copy, re
+from functools import lru_cache
 from core.anomaly_attributes import export_review, display_value, key
 
 SCHEMA = 'hoi-annotation'
@@ -8,9 +9,17 @@ def model_from_trial(trial):
     match=re.search(r'(\d{6,7}_r\d+)_([ab])_([ad])(?:_|\b)',str(trial),re.I)
     return match.group(2).upper() if match else None
 
+@lru_cache(maxsize=128)
+def _normalized_noun_aliases(items):
+    return {key(a): b for a, b in items}
+
 def canonical_noun(name, profile):
     value=str(name or '').strip('\ufeff').strip()
-    aliases={key(a):b for a,b in profile.get('noun_aliases',{}).items()}
+    items = tuple(profile.get('noun_aliases',{}).items())
+    try:
+        aliases = _normalized_noun_aliases(items)
+    except TypeError:
+        aliases = {key(a): b for a, b in items}
     k=key(value)
     if k in aliases:return aliases[k]
     match=re.fullmatch(r'(.*)_(\d+)',k)

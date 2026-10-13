@@ -19,7 +19,7 @@ def resolve_task(video):
     if root != base and root not in base.parents:
         raise ValueError("Bundle root must be a parent of the video folder")
     paths = {}
-    for key in ("project_profile", "annotations", "resume_annotations", "sam_checkpoint", "yolo_checkpoint", "review"):
+    for key in ("project_profile", "annotations", "resume_annotations", "sam_checkpoint", "yolo_checkpoint", "review", "hand_tracks"):
         value = data.get(key)
         if not value:
             continue

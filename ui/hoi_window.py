@@ -10409,6 +10409,24 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._log("hoi_task_bundle_loaded", manifest=str(task["manifest"]), annotations=str(annotation))
         self._update_onboarding_banner()
         self._open_autosave(str(annotation))
+        hand_asset = paths.get("hand_tracks")
+        if hand_asset and hand_asset.is_file() and self._automatic_box_import_mode() != "none":
+            from core.hand_assets import read_bound_hands, merge_hand_candidates
+            try:
+                candidates = read_bound_hands(hand_asset, data.get("trial_id"), self.player.frame_count, self.player.frame_rate)
+                merged = merge_hand_candidates(self.raw_boxes, candidates,
+                    suppressed=getattr(self, "_suppressed_hand_boxes", []),
+                    reviews=getattr(self, "frame_review", {}), offset=self.start_offset)
+                added = len(merged) - len(self.raw_boxes)
+                if added:
+                    self.raw_boxes = merged
+                    self._rebuild_bboxes_from_raw()
+                    self._bump_query_state_revision()
+                    self._bump_bbox_revision(refresh_completion=False)
+                    self._refresh_boxes_for_frame(self.player.current_frame)
+                self._log("hoi_task_hands_loaded", path=str(hand_asset), added=added)
+            except (ValueError, OSError, TypeError) as ex:
+                QMessageBox.warning(self, "Hand candidates unavailable", str(ex))
         if checkpoint and not checkpoint.is_file():
             QMessageBox.warning(self, "Tracking weights missing", "Annotations loaded. Download the bundle weights before using Track Correction.")
         return True
@@ -14114,9 +14132,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if self.validation_enabled and getattr(self, "validation_op_logger", None):
             self.validation_op_logger.log(event, **fields)
 
-    def _bump_bbox_revision(self) -> int:
+    def _bump_bbox_revision(self, *, refresh_completion: bool = True) -> int:
         self._bbox_revision = int(getattr(self, "_bbox_revision", 0) or 0) + 1
-        self._refresh_completion_indicators(update_status=True)
+        if refresh_completion:
+            self._refresh_completion_indicators(update_status=True)
         if hasattr(self, '_tracking_edit_timer'):self._tracking_edit_timer.start()
         return self._bbox_revision
 
@@ -20373,7 +20392,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 if self._same_box_identity(getattr(self, "_selected_edit_box", None), new_box):
                     self._selected_edit_box = None
                 self._rebuild_bboxes_from_raw()
-                self._bump_bbox_revision()
+                self._bump_bbox_revision(refresh_completion=False)
                 self._bump_query_state_revision()
                 self._refresh_boxes_for_frame(self.player.current_frame)
                 self._log(
@@ -20480,7 +20499,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self.raw_boxes.append(new_rb)
             self._selected_edit_box = dict(new_rb)
             self._rebuild_bboxes_from_raw()
-            self._bump_bbox_revision()
+            self._bump_bbox_revision(refresh_completion=False)
             self._bump_query_state_revision()
             self._refresh_boxes_for_frame(self.player.current_frame)
             self._log(
@@ -20525,7 +20544,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 changed = True
         if changed:
             self._rebuild_bboxes_from_raw()
-            self._bump_bbox_revision()
+            self._bump_bbox_revision(refresh_completion=False)
             self._bump_query_state_revision()
             self._refresh_boxes_for_frame(self.player.current_frame)
             self._sync_selected_hand_noun_after_box_relabel(
