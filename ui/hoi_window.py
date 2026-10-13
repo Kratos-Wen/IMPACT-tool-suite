@@ -4015,6 +4015,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             hand=self.selected_hand_label,
             **noun_source_fields,
         )
+        if normalized_object_id is not None:
+            self._sync_event_draw_mode(force=True)
 
     def _filtered_object_candidates_for_hand(
         self,
@@ -5459,6 +5461,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if self._inline_editor_sync or not self.selected_hand_label:
             return
         object_id = self.combo_inline_noun.currentData()
+        if object_id is not None:
+            self._sync_event_draw_mode(force=True)
         hand_data = self._selected_hand_data() or {}
         current_id = self._hand_noun_object_id(hand_data)
         noun_state = get_field_state(hand_data, "noun_object_id")
@@ -5513,6 +5517,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         except Exception:
             normalized_current_id = current_id
         if normalized_current_id == normalized_object_id:
+            if normalized_object_id is not None:
+                self._sync_event_draw_mode(force=True)
             return
         self._push_undo()
         hand_data["instrument_object_id"] = normalized_object_id
@@ -5525,6 +5531,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             finally:
                 main_combo.blockSignals(False)
         self._apply_draft_to_selected_event()
+        self._sync_event_draw_mode(force=True)
         self._update_status_label()
         self._refresh_boxes_for_frame(
             int(getattr(self.player, "current_frame", 0) or 0),
@@ -8839,6 +8846,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._update_overlay(self.player.current_frame)
         self._update_hoi_titles()
 
+        self._sync_event_draw_mode(force=True)
+
     def _completion_render_inputs(self):
         """Content snapshots protect caches even when an editor mutates data in place.
 
@@ -10377,7 +10386,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if data.get("status") != "ready" and not (resume and resume.is_file()):
             self._apply_profile_libraries()
             self._open_autosave("")
-            self._load_optional_task_hands(data, paths)
             QMessageBox.warning(self, "Task not ready", data.get("reason") or "Assets or timeline verification are pending. No event annotations imported.")
             return True
         expected = data.get("frame_count")
@@ -10411,30 +10419,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._log("hoi_task_bundle_loaded", manifest=str(task["manifest"]), annotations=str(annotation))
         self._update_onboarding_banner()
         self._open_autosave(str(annotation))
-        self._load_optional_task_hands(data, paths)
         if checkpoint and not checkpoint.is_file():
             QMessageBox.warning(self, "Tracking weights missing", "Annotations loaded. Download the bundle weights before using Track Correction.")
         return True
-
-    def _load_optional_task_hands(self, data, paths):
-        hand_asset = paths.get("hand_tracks")
-        if hand_asset and hand_asset.is_file() and self._automatic_box_import_mode() != "none":
-            from core.hand_assets import read_bound_hands, merge_hand_candidates
-            try:
-                candidates = read_bound_hands(hand_asset, data.get("trial_id"), self.player.frame_count, self.player.frame_rate)
-                merged = merge_hand_candidates(self.raw_boxes, candidates,
-                    suppressed=getattr(self, "_suppressed_hand_boxes", []),
-                    reviews=getattr(self, "frame_review", {}), offset=self.start_offset)
-                added = len(merged) - len(self.raw_boxes)
-                if added:
-                    self.raw_boxes = merged
-                    self._rebuild_bboxes_from_raw()
-                    self._bump_query_state_revision()
-                    self._bump_bbox_revision(refresh_completion=False)
-                    self._refresh_boxes_for_frame(self.player.current_frame)
-                self._log("hoi_task_hands_loaded", path=str(hand_asset), added=added)
-            except (ValueError, OSError, TypeError) as ex:
-                QMessageBox.warning(self, "Hand candidates unavailable", str(ex))
 
     def _auto_load_local_assets_for_video(self, video_path: str) -> None:
         path = str(video_path or "").strip()
@@ -13253,6 +13240,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     self._refresh_semantic_suggestions_for_event(self.selected_event_id, event)
         self._update_status_label()
 
+        if "noun_object_id" in changed_fields or "instrument_object_id" in changed_metadata:
+            self._sync_event_draw_mode(force=True)
+
     def _after_events_loaded(self):
         self.selected_event_id = None
         self.selected_hand_label = None
@@ -14580,6 +14570,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             else:
                 self._auto_load_local_assets_for_video(fp)
             self._open_autosave(self.current_annotation_path)
+        self._auto_load_video_hands(fp)
         self._log_annotation_ready_state("hoi_load_video_assets")
         self._mark_query_calibration_dirty()
         self._update_onboarding_banner()
@@ -19164,13 +19155,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return result
 
     def _event_visible_object_ids(self, frame=None):
-        """Only selected event entities may appear on the canvas; ID 0 is valid."""
+        """Use the same active relations for object boxes and relation lines."""
         ids = set()
         if self.selected_event_id is None:
             return ids
         f = self._assembly_frame() if frame is None else frame
-        relations = [row for row in self._frame_display_relations(f)
-                     if row.get("event_id") == self.selected_event_id]
+        relations = self._frame_display_relations(f)
         draft = getattr(self, "event_draft", {}) or {}
         # Keep incomplete drafts drawable while their boundaries are being entered.
         if not relations and any((d.get('interaction_start') is None or d.get('interaction_end') is None)
@@ -19466,7 +19456,31 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         if not skip_events:
             self._refresh_events(refresh_boxes=False)
+        self._sync_event_draw_mode()
         self._schedule_box_observation()
+
+    def _next_event_draw_role(self):
+        hand = self._selected_hand_data()
+        if hand is None:
+            return None
+        frame = int(self.player.current_frame)
+        if not self._frame_hand_box(self.selected_hand_label, frame):
+            return "hand"
+        noun = self._hand_noun_object_id(hand)
+        instrument = self._hand_instrument_object_id(hand)
+        if noun is not None and not self._boxes_for_review('O:' + str(noun), frame):
+            return "noun"
+        if instrument is not None and not self._boxes_for_review('O:' + str(instrument), frame):
+            return "instrument"
+        return "noun" if noun is not None or instrument is None else "instrument"
+
+    def _sync_event_draw_mode(self, *, force=False):
+        if self.rad_draw_none.isChecked() and not force:
+            return
+        role = self._next_event_draw_role()
+        if role is not None:
+            (self.rad_draw_inst if role == "instrument" else self.rad_draw_target).setChecked(True)
+        self._update_inline_edit_boxes_button_state()
 
     def _get_auto_draw_label(self):
         self._pending_draw_box_role = None
@@ -19475,6 +19489,16 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         frame_idx = int(getattr(self.player, "current_frame", 0) or 0)
         selected_hand = self._normalize_hand_label(self.selected_hand_label)
         hand_data = self.event_draft.get(self.selected_hand_label) or {}
+
+        if not self.rad_draw_none.isChecked():
+            role = self._next_event_draw_role()
+            self._pending_draw_box_role = role
+            if role == "hand":
+                return selected_hand, None
+            uid = (self._hand_instrument_object_id(hand_data) if role == "instrument"
+                   else self._hand_noun_object_id(hand_data))
+            name = self._object_name_for_id(uid, default_for_none="", fallback="")
+            return (name, self._class_id_for_label(name)) if name else None
 
         if not self._frame_has_selected_hand_box(frame_idx, selected_hand):
             options = []
@@ -19801,6 +19825,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         checkbox = getattr(self, "chk_edit_boxes", None)
         if checkbox is None or not checkbox.isChecked():
             return "OFF"
+        if not self.rad_draw_none.isChecked() and self._next_event_draw_role() == "hand":
+            return "ON: Hand"
         if bool(getattr(self, "rad_draw_inst", None) and self.rad_draw_inst.isChecked()):
             return "ON: Instrument"
         if bool(getattr(self, "rad_draw_target", None) and self.rad_draw_target.isChecked()):
@@ -19823,6 +19849,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             "- ON: Manual = Ctrl+drag creates an unlabeled/manual box\n"
             "- ON: Instrument = Ctrl+drag creates a box that inherits the selected event instrument\n"
             "- ON: Noun = Ctrl+drag creates a box that inherits the selected event noun\n"
+            "- ON: Hand = Ctrl+drag first supplies the missing selected-hand box\n"
             "Shortcut: Ctrl+B"
         )
         btn.blockSignals(False)
@@ -20271,8 +20298,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             object_role=role,
             object_id=object_id,
         )
-        if role == "noun" and getattr(self, "rad_draw_inst", None) is not None:
-            self.rad_draw_inst.setChecked(True)
+        self._sync_event_draw_mode()
 
     def _select_hand(self, hand_label: str, on: bool):
         """[Step 2] Switch hand context: save old data -> switch -> load new data."""
@@ -20941,6 +20967,51 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             mapped = dict(b)
             mapped["frame"] = target_frame
             self.bboxes.setdefault(target_frame, []).append(mapped)
+
+    def _auto_load_video_hands(self, video_path):
+        from pathlib import Path
+        import xml.etree.ElementTree as ET
+        from core.task_assets import resolve_task
+        from core.hand_assets import read_bound_hands, merge_hand_candidates
+        video = Path(video_path).resolve()
+        try:
+            task = resolve_task(video)
+            declared = task['paths'].get('hand_tracks') if task else None
+            candidates = [declared] if declared else [
+                video.with_suffix('.hands.xml'), video.with_suffix('.hand.xml'),
+                video.parent / 'hands.xml', video.parent / 'hand.xml',
+            ]
+            path = next((p for p in candidates if p and p.is_file()), None)
+            if path is None:
+                return 0
+            root = ET.parse(path).getroot()
+            if root.get('schema') == 'impact-hand-candidates-1':
+                rows = read_bound_hands(path, task['data']['trial_id'] if task else video.stem,
+                                       self.player.frame_count, self.player.frame_rate)
+            else:
+                rows = self._parse_cvat_xml(str(path))
+                if any(not 0 <= row['orig_frame'] < self.player.frame_count or
+                       not all(math.isfinite(row[key]) for key in ('x1','y1','x2','y2')) or
+                       row['x1'] >= row['x2'] or row['y1'] >= row['y2'] for row in rows):
+                    raise ValueError('Hand XML contains invalid video frames or geometry')
+            # XML frames are native video indices, not crop-relative indices.
+            rows = [dict(row, orig_frame=row['orig_frame'] - int(self.start_offset)) for row in rows]
+            merged = merge_hand_candidates(self.raw_boxes, rows,
+                suppressed=getattr(self, '_suppressed_hand_boxes', []),
+                reviews=getattr(self, 'frame_review', {}), offset=self.start_offset)
+            added = len(merged) - len(self.raw_boxes)
+            if added:
+                self.raw_boxes = merged
+                self._rebuild_bboxes_from_raw()
+                self._bump_query_state_revision()
+                self._bump_bbox_revision(refresh_completion=False)
+                self._refresh_boxes_for_frame(self.player.current_frame)
+            self._log('hoi_auto_load_hands_xml', path=str(path), added=added)
+            return added
+        except (ValueError, OSError, TypeError, ET.ParseError) as exc:
+            self._log('hoi_auto_load_failed', asset='hands_xml', path=str(video), error=str(exc))
+            QMessageBox.warning(self, 'Hand XML unavailable', str(exc))
+            return 0
 
     def _load_hands_xml(self):
         """[Fix] Load hand bbox XML with Auto-Alignment for clipped videos."""

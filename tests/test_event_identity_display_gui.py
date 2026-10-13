@@ -44,7 +44,7 @@ assert w._get_auto_draw_label() is None
 draw('assembly')
 assert choices[-1]==['Use existing [55] assembly','Create a new assembly instance']
 assert w._hand_noun_object_id(w.event_draft['Left_hand'])==55
-assert w.rad_draw_inst.isChecked()
+assert w.rad_draw_target.isChecked()
 assert w._hand_instrument_object_id(w.event_draft['Left_hand']) is None
 assert w.object_id_counter==56
 box=next(b for b in w.raw_boxes if b['orig_frame']==25 and b['id']==55)
@@ -54,17 +54,19 @@ w._hoi_undo();assert not any(b['orig_frame']==25 and b['id']==55 for b in w.raw_
 w._hoi_redo();assert w.raw_boxes==saved
 assert w._hand_noun_object_id(w.event_draft['Left_hand'])==55
 # The next box uses the instrument role without rebinding the noun.
-w.rad_draw_inst.setChecked(True)
-assert w._get_auto_draw_label() is None
+depth=len(w._hoi_undo_stack)
+w.combo_inline_instrument.setCurrentIndex(w.combo_inline_instrument.findData(8))
+assert w.rad_draw_inst.isChecked()
+assert w._get_auto_draw_label()[0]=='tool'
 assert w._pending_draw_box_role=='instrument'
 draw('tool',role=w._pending_draw_box_role)
 assert w._hand_instrument_object_id(w.event_draft['Left_hand'])==8
 assert w._hand_noun_object_id(w.event_draft['Left_hand'])==55
-assert w.rad_draw_inst.isChecked()
+assert w.rad_draw_target.isChecked()
 w.rad_draw_none.setChecked(True)
 draw('[55] assembly',frame=24,role=None)
 assert w.rad_draw_none.isChecked()
-w._hoi_undo();w._hoi_undo()
+while len(w._hoi_undo_stack)>depth:w._hoi_undo()
 assert w._hand_instrument_object_id(w.event_draft['Left_hand']) is None
 # Same selected instance on subsequent frames must never prompt or allocate another ID.
 QInputDialog.getItem=lambda *a,**k:(_ for _ in ()).throw(AssertionError('Unexpected instance prompt'))

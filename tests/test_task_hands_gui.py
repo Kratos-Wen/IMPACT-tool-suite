@@ -46,4 +46,21 @@ with tempfile.TemporaryDirectory() as directory:
  assert any(b['orig_frame']==10 and b['source']=='hand_sidecar_candidate' for b in w.raw_boxes),'Pending task did not load bound hand XML'
  assert all(b['id']==-1 for b in w.raw_boxes)
  w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.player.release_media()
+ assert all('No event annotations imported' in text for text in warnings),warnings
+ warnings.clear()
+ # A sibling hand.xml also loads without a manifest entry, including Manual mode.
+ hands.write_text(xml);hands.rename(root/'hand.xml')
+ task=json.loads((root/'task.json').read_text());task.pop('hand_tracks')
+ task.update(status='ready',annotations='annotations.json')
+ atomic_json(root/'task.json',task,backup=False)
+ reopened=HOIWindow();reopened._show_quick_start_on_startup=False
+ reopened._set_experiment_mode_key('manual')
+ assert reopened._load_video(str(video));reopened._autosave_timer.stop()
+ assert len([b for b in reopened.raw_boxes if b['orig_frame']==10 and b['label']=='Left_hand'])==1
+ assert next(b for b in reopened.raw_boxes if b['orig_frame']==0)['x1']==1
+ before=copy.deepcopy(reopened.raw_boxes)
+ assert reopened._auto_load_video_hands(video)==0 and reopened.raw_boxes==before
+ assert not warnings,warnings
+ reopened._stop_autosave();reopened._mark_hoi_saved();reopened._close_request_approved=True
+ reopened.close();reopened.player.release_media()
 print('TASK_HAND_XML_AUTOMATIC_LOAD_BINDING_HUMAN_PRESERVATION_SUPPRESSION_IDEMPOTENCE_PASS')
