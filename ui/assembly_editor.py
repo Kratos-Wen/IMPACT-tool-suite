@@ -2,13 +2,14 @@
 from copy import deepcopy
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QDialog,QVBoxLayout,QLabel,QSpinBox,QComboBox,QListWidget,
-    QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox,QPushButton,QHBoxLayout)
+    QListWidgetItem,QTableWidget,QTableWidgetItem,QCheckBox,QDialogButtonBox,QMessageBox,QPushButton,QHBoxLayout,QHeaderView)
 from core.assembly_timeline import (state_at,put_state,noun_at,validate_timeline,empty_timeline,
     reference_id,resolve_object,active_id,active_object_ids,merge_instances)
 from core.project_profile import PROFILE
 from core.annotation_migration import model_from_trial
 from core.instance_category import instance_category
 from core.label_glossary import label_tooltip
+from core.assembly_policy import component_options, excluded_selections, slot_fastener
 
 class AssemblyEditorMixin:
     def _assembly_data(self):
@@ -76,18 +77,26 @@ class AssemblyEditorMixin:
         uid=reference_id(hand,data,frame)
         if uid is not None and uid not in ids and uid in names:
             part=instance_category(names[uid],PROFILE)
-            if part in PROFILE.get('assembly_components',[]):
+            if part in component_options(PROFILE):
                 rows.append((uid,f'Start composition on selected {part} (keep ID {uid})',part))
         return rows
 
     def _assembly_slot_table(self,parent):
         table=QTableWidget(len(self._assembly_specs()),3,parent);table.setObjectName('assemblyInterfaces')
         table.setHorizontalHeaderLabels(['Interface','Slot 1 secured','Slot 2 secured'])
+        table.horizontalHeader().setSectionResizeMode(0,QHeaderView.Stretch)
+        for col in (1,2):table.horizontalHeader().setSectionResizeMode(col,QHeaderView.ResizeToContents)
+        model=model_from_trial(self._noun_model_trial())
         for row,spec in enumerate(self._assembly_specs()):
-            cell=QTableWidgetItem(spec['id']);cell.setFlags(cell.flags() & ~Qt.ItemIsEditable);table.setItem(row,0,cell)
+            fastener=slot_fastener(spec,model)
+            if not fastener and spec.get('fastener_by_model'):
+                fastener=' / '.join(f'{value} ({key})' for key,value in spec['fastener_by_model'].items())
+            text=spec['id']+(f'\n{fastener}' if fastener else '')
+            cell=QTableWidgetItem(text);cell.setFlags(cell.flags() & ~Qt.ItemIsEditable);table.setItem(row,0,cell)
             for col in (1,2):
                 check=QCheckBox();check.setTristate(True)
-                check.setToolTip('Checked: secured; unchecked: not secured; dash: unknown');table.setCellWidget(row,col,check)
+                check.setToolTip((f'Fastener: {fastener}. ' if fastener else '')+'Checked: secured; unchecked: not secured; dash: unknown');table.setCellWidget(row,col,check)
+        table.resizeRowsToContents()
         return table
 
     def _assembly_load_slots(self,table,interfaces):
@@ -101,6 +110,8 @@ class AssemblyEditorMixin:
             for col,key in ((1,'1'),(2,'2'))} for row,spec in enumerate(self._assembly_specs())}
 
     def _assembly_validate_components(self,components,interfaces):
+        excluded=excluded_selections(components,PROFILE)
+        if excluded:raise ValueError('These items cannot be selected as assembly components: '+', '.join(excluded)+'. Use the connection slots for connection fasteners.')
         model=model_from_trial(self._noun_model_trial())
         forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
         if forbidden.intersection(components):raise ValueError('Selected component is unavailable for this model.')
@@ -161,8 +172,8 @@ class AssemblyEditorMixin:
         create=QPushButton('New assembly');create.setObjectName('newAssemblyInstance')
         create.clicked.connect(lambda:objects.setCurrentIndex(0));instance_row.addWidget(create);layout.addLayout(instance_row)
         status=QLabel();layout.addWidget(status)
-        layout.addWidget(QLabel('Check all components currently connected in this instance. Multiple selections are allowed.'))
-        names=set(PROFILE.get('assembly_components',[]))|{x for s in data.get('states',[]) for x in s['components']};names.discard('assembly')
+        layout.addWidget(QLabel('Select connected parts. Connection screws are recorded in the slots below.'))
+        names=component_options(PROFILE,data.get('states',[]))
         model=model_from_trial(self._noun_model_trial())
         forbidden=set(PROFILE.get('model_component_rules',{}).get(model,{}).get('forbidden_components',[]))
         parts=QListWidget();parts.setObjectName('assemblyComponents');layout.addWidget(parts)
@@ -177,7 +188,10 @@ class AssemblyEditorMixin:
             uid=objects.currentData();initial=state_at(data,frame.value(),uid,follow_merges=False) if uid is not None else None;initial=initial or {}
             if not initial and uid in promotions:initial={'components':[promotions[uid]]}
             retired=uid is not None and active_id(data,uid,frame.value())!=uid
-            status.setText(f'ID {uid} is already merged. Select its receiving ID or an earlier frame.' if retired else 'Changes start at this frame for this ID only.')
+            excluded=excluded_selections(initial.get('components',[]),PROFILE)
+            notice=(' Previous excluded selections: '+', '.join(excluded)+'. Check the connection slots; saving replaces these selections at this frame.') if excluded else ''
+            status.setText(f'ID {uid} is already merged. Select its receiving ID or an earlier frame.' if retired else 'Changes start at this frame for this ID only.'+notice)
+            status.setWordWrap(True)
             for i in range(parts.count()):
                 item=parts.item(i);item.setCheckState(Qt.Checked if item.text() in initial.get('components',[]) and item.text() not in forbidden else Qt.Unchecked)
             self._assembly_load_slots(table,initial.get('interfaces',{}))

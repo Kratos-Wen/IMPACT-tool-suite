@@ -21,7 +21,8 @@ w.player.current_frame=0;w._set_selected_event(event['event_id'],'Left_hand')
 app.processEvents()
 assert w.selected_event_id==event['event_id'],'Deferred load navigation must not override a selected event'
 assert w._event_visible_object_ids(0)=={'1','2'}
-assert not w._event_visible_object_ids(20),'Another event must not expose unrelated object tracks'
+assert w._event_visible_object_ids(20)=={'4'},'At the other event, show only its chosen object'
+assert not w._event_visible_object_ids(15),'A gap between events must not expose background tracks'
 w.event_draft['Left_hand'].update(noun_object_id=None,target_object_id=None,instrument_object_id=None,tool_object_id=None)
 assert not w._event_visible_object_ids(0)
 w._apply_noun_choice(1);w.event_draft['Left_hand'].update(instrument_object_id=2,tool_object_id=2)
