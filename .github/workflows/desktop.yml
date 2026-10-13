@@ -60,6 +60,7 @@ jobs:
       - run: python tests/test_manual_frame_display_gui.py
       - run: python tests/test_new_entity_search_gui.py
       - run: python tests/test_manual_only_workflow_gui.py
+      - run: python tests/test_hand_only_vocabulary_gui.py
       - run: python tests/test_correction_propagation.py
       - run: python tests/test_instance_edits.py
       - run: python tests/test_instance_registry_gui.py

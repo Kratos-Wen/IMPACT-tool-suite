@@ -36,11 +36,11 @@ python3.11 -m venv .venv
 
 ## 加载和保存
 
-下载自己的姓名目录和同级Shared，保留原目录结构。启动工具，选择Manual模式，通过文件夹按钮或菜单Load Video...打开姓名/tasks/reassembly或disassembly/视频编号/video.mp4。相邻的task.json自动加载Shared中的项目配置与annotations.json，并登记SAM/YOLO权重路径；无需逐个导入。已有reviewed.json时优先恢复它，保存默认写入reviewed.json。工具核对视频编号、FPS和帧数。
+下载自己的姓名目录和同级Shared，保留原目录结构。启动工具，通过文件夹按钮或菜单Load Video...打开姓名/tasks/reassembly或disassembly/视频编号/video.mp4。相邻的task.json自动加载Shared中的项目配置与annotations.json，并登记SAM/YOLO权重路径；无需逐个导入。已有reviewed.json时优先恢复它，保存默认写入reviewed.json。工具核对视频编号、FPS和帧数。
 
 不要把video.mp4单独移出任务目录。review.json是原始模型审核材料，主编辑器读取task.json指定的编辑稿。正常重启会恢复上次工程和播放位置；发现更新的自动恢复稿时，按提示选择恢复。音频审核独立运行：打开个人音频任务目录内的review.html。
 
-独立视频用Load HOI annotations选择配套稿。导入旧格式时，工具先将原文件放入archived，再转换为当前格式。
+独立视频先通过⋯ → Import → Project Profile...加载提供的project_profile.json，再用HOI Annotations...选择配套稿。导入旧格式时，工具先将原文件放入archived，再转换为当前格式。
 
 选event和实例，拖动或缩放参考框，再用Track Correction勾选目标、设置当前帧两侧的区间。点击OK后任务在后台排队，可以继续标注。小进度条显示已处理的目标帧数；Details可取消、重试或恢复保存的结果。结果自动回填为未核验框，用播放和Frame review检查，Undo可撤回一次回填。传播期间的人工修改会保留，新参考框会截断旧结果并触发后续传播。
 

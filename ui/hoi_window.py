@@ -1308,6 +1308,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.file_menu.addSeparator()
         import_menu = self.file_menu.addMenu("Import")
         self.import_menu = import_menu
+        self.act_load_project_profile = import_menu.addAction("Project Profile...", self._load_project_profile)
         self.act_import_targets = import_menu.addAction("Noun List...", self._import_targets)
         self.act_prune_object_library = import_menu.addAction(
             "Prune Object Library To Current Nouns",
@@ -3488,7 +3489,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     "title": "Manual",
                     "body_lines": [
                         "Edit imported events and boxes, or create your own.",
-                        "SAM click and background correction remain optional.",
+                        "Draw a reference box; SAM background correction is optional.",
                     ],
                     "accent": "#334155",
                     "tone": "neutral",
@@ -5917,12 +5918,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
             noun_label = "Noun"
             noun_placeholder = "Choose noun..."
-            noun_enabled = bool(verb_value)
+            noun_enabled = True
             allows_no_noun = bool(verb_value) and self._verb_allows_no_noun(verb_value)
             if verb_value and not self._noun_required_for_verb(verb_value):
                 noun_label = "Noun (Optional)"
             elif not verb_value:
-                noun_placeholder = "Choose verb first..."
+                noun_placeholder = "Choose noun..."
             self.lbl_inline_noun.setText(noun_label)
             self.combo_inline_noun.blockSignals(True)
             self.combo_inline_noun.clear()
@@ -6129,7 +6130,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     else (
                         "Wait for the current detection job to finish."
                         if detection_assist_enabled
-                        else "Draw a box or use SAM click to add a box."
+                        else "Draw a reference box, then use Track Correction to propagate it."
                     )
                 )
                 self._inline_object_candidates = []
@@ -10247,6 +10248,40 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 best_path = candidate
         return best_path if best_score >= 0 else ""
 
+    def _load_project_profile(self, path=None, *, checkpoint=True):
+        """Load missing vocabulary without replacing events, boxes or instance IDs."""
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(self, "Load project profile", "", "JSON Files (*.json)")
+        if not path:
+            return False
+        try:
+            with open(path, encoding="utf-8-sig") as stream:
+                profile = json.load(stream)
+            if not isinstance(profile, dict):
+                raise ValueError("Project profile must be an object.")
+            for key in ("noun_classes", "verbs"):
+                values = profile.get(key)
+                if not isinstance(values, list) or not values or any(not isinstance(v, str) or not v.strip() for v in values):
+                    raise ValueError("Project profile needs a nonempty " + key + " list.")
+            from core.project_profile import activate_project_profile
+            activate_project_profile(path)
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.warning(self, "Project profile", str(exc))
+            return False
+        global _ANOMALY_LABEL_OPTIONS, _ANOMALY_LABEL_ALIASES
+        _ANOMALY_LABEL_OPTIONS = tuple(_PROJECT_PROFILE.get("anomaly_labels") or ["normal"])
+        _ANOMALY_LABEL_ALIASES = dict(_PROJECT_PROFILE.get("anomaly_aliases") or {})
+        self._known_anomaly_labels = set(_ANOMALY_LABEL_OPTIONS)
+        self._apply_profile_libraries()
+        self._refresh_anomaly_combos()
+        self._refresh_box_import_actions()
+        self._refresh_model_noun_choices()
+        self._update_inline_event_editor()
+        self._log_annotation_ready_state("hoi_load_project_profile")
+        if checkpoint:
+            self._checkpoint_tracking()
+        return True
+
     def _apply_profile_libraries(self):
         existing={label.name for label in self.verbs}
         added=False
@@ -10257,7 +10292,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 existing.add(name);added=True
         if added:
             self._update_verb_combo();self.label_panel.refresh()
-        if not _PROJECT_PROFILE.get('create_default_noun_instances',False):return
+        if not _PROJECT_PROFILE.get('create_default_noun_instances',True):return
         from core.instance_category import instance_category
         known={instance_category(name,_PROJECT_PROFILE,self.class_map.values()) for name in self.global_object_map}
         combos=[getattr(self,name,None) for name in ('combo_target','combo_instrument','combo_inline_noun','combo_inline_instrument')]
@@ -10265,7 +10300,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         try:
             for name in _PROJECT_PROFILE.get('noun_classes',[]):
                 if name=='assembly' or instance_category(name,_PROJECT_PROFILE,self.class_map.values()) in known:continue
-                used=set(self.global_object_map.values())|{box.get('id') for box in self.raw_boxes}
+                used=set(self.global_object_map.values())|{box.get('id') for box in self.raw_boxes if not self._is_hand_label(box.get('label'))}
                 uid=max(1,self.object_id_counter)
                 while uid in used:uid+=1
                 self.object_id_counter=max(self.object_id_counter,uid+1)
@@ -10346,6 +10381,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         path = str(video_path or "").strip()
         if not path:
             return
+        # Standalone sample bundles keep the profile beside sample/ or video.mp4.
+        from pathlib import Path
+        video_dir = Path(path).resolve().parent
+        for directory in (video_dir, video_dir.parent):
+            profile = directory / "project_profile.json"
+            if profile.is_file():
+                self._load_project_profile(str(profile), checkpoint=False)
+                break
         loaded_assets: List[str] = []
         manual_mode = self._manual_mode_enabled()
 

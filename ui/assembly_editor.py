@@ -192,7 +192,7 @@ class AssemblyEditorMixin:
                 if uid is None:
                     if len(components)<2:
                         raise ValueError('A new independent assembly needs at least two connected components. For a single part, reuse its existing object ID.')
-                    used={int(x) for x in self.global_object_map.values()}|{s['object_id'] for s in data.get('states',[])}|{b['id'] for b in self.raw_boxes if type(b.get('id')) is int}
+                    used={int(x) for x in self.global_object_map.values()}|{s['object_id'] for s in data.get('states',[])}|{b['id'] for b in self.raw_boxes if type(b.get('id')) is int and not self._normalize_hand_label(b.get('label'))}
                     uid=max(int(self.object_id_counter),max(used,default=-1)+1)
                 updated=put_state(data,dict(frame=frame.value(),object_id=uid,components=components,interfaces=interfaces,composition_review_state='reviewed'))
             except ValueError as exc:QMessageBox.warning(dlg,'Invalid assembly',str(exc));return
