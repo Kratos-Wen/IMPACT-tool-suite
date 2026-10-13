@@ -293,13 +293,9 @@ class HOITimelineRow(BaseTimelineRow):
 
     def mouseMoveEvent(self, e):
         if self._pending_box_jump:
-            pending = self._pending_box_jump
-            if (e.pos() - pending['position']).manhattanLength() < QApplication.startDragDistance():
-                return
-            self._pending_box_jump = None
-            self._begin_segment_drag(pending['segment'], pending['where'],
-                                     self.x_to_frame(pending['position'].x()))
-            QToolTip.hideText()
+            # Bbox ticks are navigation targets, never event drag handles.
+            # Trackpad movement during a click must not change event boundaries.
+            return
         g = self.get_gutter()
         if not self._dragging and e.x() < g:
             self._hover_frame = None
@@ -480,6 +476,11 @@ class HOITimelineRow(BaseTimelineRow):
         marker = self._hit_box_marker(e.x(), e.y())
         if marker:
             self._pending_box_jump = None
+            self._dragging = False
+            self._mode = None
+            self._active_event_id = None
+            self._preview_interval = None
+            self._preview_onset = None
             self._on_box_marker(marker['frame'])
             e.accept()
             return

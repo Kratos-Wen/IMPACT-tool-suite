@@ -12688,7 +12688,6 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         ev = self._find_event_by_id(event_id)
         if not ev:
             return
-        self._push_undo()
         h = ev.get("hoi_data", {}).setdefault(hand_key, self._blank_hand_data())
         self._ensure_hand_annotation_state(h)
         before_hand = copy.deepcopy(h)
@@ -12703,14 +12702,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         start_changed = prev_start.get("value") != new_start
         onset_changed = prev_onset.get("value") != new_onset
         end_changed = prev_end.get("value") != new_end
-        if self._interval_conflict(hand_key,new_start,new_end,event_id) is not None:
-            QMessageBox.warning(self,'Event boundaries','Events for the same hand cannot share frames. Start the next event after the previous end frame.');return
         if not (start_changed or onset_changed or end_changed):
             if self.selected_event_id == event_id:
                 self.event_draft[hand_key] = copy.deepcopy(h)
                 self._update_status_label()
                 self._refresh_inline_primary_focus(delay_ms=20)
             return
+        if self._interval_conflict(hand_key,new_start,new_end,event_id) is not None:
+            QMessageBox.warning(self,'Event boundaries','Events for the same hand cannot share frames. Start the next event after the previous end frame.');return
+        self._push_undo()
         onset_state_config = self._timeline_onset_state_for_mode()
         h["interaction_start"] = new_start
         h["interaction_end"] = new_end
@@ -18263,6 +18263,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 if combo is getattr(self, "combo_instrument", None):
                     combo.setEditText("")
                 combo.blockSignals(False)
+        # Hand-only / sparse exports may omit the vocabulary. Keep the active
+        # project vocabulary in that case; object instances remain video-local.
+        fallback_verbs = copy.deepcopy(self.verbs) if not data.get("verb_library") else []
         self.verbs.clear()
         self._update_verb_combo()
         self.label_panel.refresh()
@@ -18537,6 +18540,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     )
                     self._compute_sparse_evidence_state(hoi_data[hand_key], persist=True)
 
+        if not self.verbs:
+            self.verbs.extend(fallback_verbs)
+            self._update_verb_combo()
+            self.label_panel.refresh()
+        self._apply_profile_libraries()
         self._refresh_anomaly_combos(_DEFAULT_ANOMALY_LABEL)
         self._ensure_verbs_cover_events()
         self._refresh_events()

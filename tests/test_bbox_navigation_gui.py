@@ -62,6 +62,9 @@ QTest.mouseClick(row,Qt.LeftButton,pos=QPoint(row.frame_to_x(20),30))
 assert w.events==saved_intervals and not row._dragging and row._pending_box_jump is None
 assert w.player.current_frame==20 and w.player._displayed_frame==20
 assert int(w.player._last_frame_bgr[0,0,0])==20
+assert w.combo_inline_verb.currentData() == 'hold'
+assert w.combo_inline_noun.currentData() == uid
+assert w.combo_inline_instrument.currentData() == tool
 # Paused observation must immediately repaint and recolor a machine hand tick.
 with patch.object(w,'isVisible',return_value=True),patch.object(w,'isActiveWindow',return_value=True),patch.object(row,'update') as repaint:
     w._observed_frame_context=w._observation_context();w._observe_displayed_boxes()
@@ -99,7 +102,7 @@ assert any(m['frame']==20 and m['role']=='O' and m['state']=='manual' for m in w
 w._hoi_undo();assert w.global_object_map==stable_ids
 row=timeline.actor_rows['Left_hand'];row.resize(900,48)
 # A click on a bbox frame must not become an event move; dragging from the same
-# line still moves the event. The upper SOE handle area remains editable.
+# line is also navigation-only. The upper SOE handle area remains editable.
 local_segments=[dict(event_id=17,start=10,end=80,onset=40,verb='hold')]
 local_markers=[dict(frame=f,role='O',entity='O:1',state='manual') for f in (10,20,40,80)]
 row._get_segments=lambda:local_segments
@@ -125,9 +128,19 @@ point=QPoint(row.frame_to_x(25),30)
 event=QMouseEvent(QMouseEvent.MouseMove,point,Qt.NoButton,Qt.LeftButton,Qt.NoModifier)
 app.sendEvent(row,event)
 QTest.mouseRelease(row,Qt.LeftButton,pos=point)
-assert updates[-1]==(17,'Left_hand',15,85,45) and not row._pending_box_jump
+assert not updates and jumps[-1]==20 and not row._pending_box_jump
+# The event body away from ticks still supports intentional dragging.
+QTest.mousePress(row,Qt.LeftButton,pos=QPoint(row.frame_to_x(60),30))
+point=QPoint(row.frame_to_x(65),30)
+app.sendEvent(row,QMouseEvent(QMouseEvent.MouseMove,point,Qt.NoButton,Qt.LeftButton,Qt.NoModifier))
+QTest.mouseRelease(row,Qt.LeftButton,pos=point)
+assert updates[-1]==(17,'Left_hand',15,85,45)
 QTest.mouseDClick(row,Qt.LeftButton,pos=QPoint(row.frame_to_x(20),30))
 assert jumps[-1]==20 and not activations
+# Qt's trailing release after a double-click must not commit a stale drag.
+updates.clear()
+QTest.mouseRelease(row,Qt.LeftButton,pos=QPoint(row.frame_to_x(20),30))
+assert not updates and not row._dragging and row._pending_box_jump is None
 QTest.mouseDClick(row,Qt.LeftButton,pos=QPoint(row.frame_to_x(60),30))
 assert activations[-1]==(17,'Left_hand')
 # No selected event means no marker hit; event-only filtering remains local.
