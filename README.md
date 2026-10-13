@@ -62,3 +62,5 @@ Over the timeline, **Ctrl/Command + wheel** zooms at the pointer and **Shift + w
 Event intervals include both Start and End frames. Events for the same hand must not overlap or share a boundary frame: after End 65, the next Start is at least 66. Start, Onset and End within one event may coincide. Left-hand and right-hand events may overlap. Existing conflicting annotations are retained and flagged for correction; timestamps are not shifted automatically.
 
 Importing sparse or hands-only annotations retains the active project vocabulary.
+
+A newly drawn manual entity stays visible and editable on its creation frame before it is assigned to the event. Select its ID under **Noun** or **Instrument** to bind it. Label entry and instance selectors suggest substring and spelling matches. Click a suggestion; in the box-label dialog, **Tab** accepts the highlighted suggestion. Exact names and explicit instance IDs take precedence over suggestions.

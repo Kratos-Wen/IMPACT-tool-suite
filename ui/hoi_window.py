@@ -8569,6 +8569,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 completer.setFilterMode(Qt.MatchContains)
             except Exception:
                 pass
+        if any(word in placeholder.casefold() for word in ('noun', 'instrument')):
+            from ui.label_search import install_instance_search
+            install_instance_search(combo)
         if auto_popup:
             self._enable_combo_autopopup(combo)
 
@@ -19203,7 +19206,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return any(entity in entities for entity in self._review_entities(hand, hand_key, frame))
         frame = int(box.get('orig_frame',self._assembly_frame()-self.start_offset)) + int(self.start_offset)
         uid = box.get('id')
-        return uid is not None and active_id(self._assembly_data(),uid,frame)==uid and str(uid) in self._event_visible_object_ids(frame)
+        if uid is None or active_id(self._assembly_data(), uid, frame) != uid:
+            return False
+        # A just-drawn manual entity is an explicit editing target even before
+        # it is bound to the event. Keep this one box visible, not its whole track.
+        from core.bbox_markers import manually_annotated
+        editing = getattr(self, '_selected_edit_box', None)
+        if manually_annotated(box) and self._same_box_identity(box, editing):
+            return True
+        return str(uid) in self._event_visible_object_ids(frame)
 
     def _refresh_boxes_for_frame(
         self, frame: int, skip_events: bool = False, lightweight: bool = False
@@ -20301,6 +20312,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._apply_draft_to_selected_event()
         self._bump_query_state_revision()
         self._refresh_events(refresh_boxes=False)
+        self._refresh_boxes_for_frame(self.player.current_frame, skip_events=True, lightweight=True)
         self._update_hoi_titles()
         if getattr(self, "hoi_timeline", None):
             self.hoi_timeline.refresh()

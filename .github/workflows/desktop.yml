@@ -58,6 +58,7 @@ jobs:
       - run: python tests/test_bbox_navigation_gui.py
       - run: python tests/test_sparse_library_navigation_gui.py
       - run: python tests/test_manual_frame_display_gui.py
+      - run: python tests/test_new_entity_search_gui.py
       - run: python tests/test_correction_propagation.py
       - run: python tests/test_instance_edits.py
       - run: python tests/test_instance_registry_gui.py

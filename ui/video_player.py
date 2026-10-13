@@ -3,7 +3,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from core.video_preview import PreviewDecoder, read_frame, shutdown_preview
 from utils.ego_orientation_guard import check_ego_orientation
-from PyQt5.QtCore import Qt, QTimer, QRect
+from PyQt5.QtCore import Qt, QTimer, QRect, QStringListModel, QEvent
 from PyQt5.QtGui import QImage, QPainter, QColor, QFont, QPen, QFontMetrics
 from PyQt5.QtWidgets import (
     QLabel,
@@ -1259,7 +1259,7 @@ class VideoPlayer(QLabel):
         lbl_txt = raw_txt
         cid_val = resolved_cid
         if known and resolved_label:
-            lbl_txt = resolved_label
+            lbl_txt = raw_txt if raw_txt.isdigit() or raw_txt.startswith('[') else resolved_label
         elif raw_txt.isdigit():
             try:
                 cid_val = int(raw_txt)
@@ -1675,12 +1675,14 @@ class VideoPlayer(QLabel):
                 super().__init__(text, parent)
                 self.apply_completion = None
 
-            def keyPressEvent(self, event):
-                if event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
-                    if callable(self.apply_completion) and self.apply_completion():
+            def event(self, event):
+                # QWidget handles Tab traversal before keyPressEvent; intercept
+                # here so Tab can accept a suggestion instead of leaving the field.
+                if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+                    if callable(self.apply_completion) and self.apply_completion(accept_suggestion=True):
                         event.accept()
-                        return
-                return super().keyPressEvent(event)
+                        return True
+                return super().event(event)
 
             def focusOutEvent(self, event):
                 if callable(self.apply_completion):
@@ -1693,10 +1695,21 @@ class VideoPlayer(QLabel):
         self_line = LabelLineEdit(current, dlg)
         label_suggestions = self._clean_label_suggestions(self.edit_label_suggestions)
         if label_suggestions:
-            completer = QCompleter(label_suggestions, dlg)
+            from core.label_search import ranked_labels
+            suggestion_model = QStringListModel(label_suggestions, dlg)
+            completer = QCompleter(suggestion_model, dlg)
             completer.setCaseSensitivity(Qt.CaseInsensitive)
-            completer.setFilterMode(Qt.MatchContains)
+            completer.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
             self_line.setCompleter(completer)
+            def search_labels(text):
+                suggestions = ranked_labels(text, label_suggestions)
+                suggestion_model.setStringList(suggestions)
+                completer.setCompletionPrefix('')
+                if suggestions:
+                    completer.complete()
+                else:
+                    completer.popup().hide()
+            self_line.textEdited.connect(search_labels)
         hint = QLabel("", dlg)
         hint.setStyleSheet("color: #555;")
 
@@ -1704,13 +1717,15 @@ class VideoPlayer(QLabel):
             raw = str(txt or "").strip()
             if not raw:
                 return ""
+            if raw.isdigit() or (raw.startswith('[') and ']' in raw):
+                return raw
             raw_lower = raw.lower()
             for candidate in sorted(label_suggestions, key=lambda x: len(str(x)), reverse=True):
                 cand = str(candidate or "").strip()
                 if not cand:
                     continue
                 cand_lower = cand.lower()
-                if raw_lower == cand_lower or raw_lower.endswith(cand_lower):
+                if raw_lower == cand_lower:
                     return cand
             if callable(self.edit_label_resolver):
                 try:
@@ -1726,10 +1741,18 @@ class VideoPlayer(QLabel):
                     pass
             return raw
 
-        def apply_completion():
+        def apply_completion(accept_suggestion=False):
+            current_txt = str(self_line.text() or "").strip()
+            # Exact names and explicit instance IDs always win over stale popups.
+            exact = next((label for label in label_suggestions if label.casefold() == current_txt.casefold()), None)
+            if exact is not None or current_txt.isdigit() or current_txt.startswith('['):
+                normalized = exact or current_txt
+                if normalized != current_txt:
+                    self_line.setText(normalized)
+                return False
             completion = ""
             completer = self_line.completer()
-            if completer is not None:
+            if accept_suggestion and completer is not None:
                 try:
                     popup_index = completer.popup().currentIndex()
                     if popup_index.isValid():
