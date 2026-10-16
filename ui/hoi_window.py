@@ -50,6 +50,8 @@ from ui.label_glossary import LabelGlossaryMixin, decorate_combo
 from core.safe_storage import atomic_json
 from ui.correction_propagation import CorrectionPropagationMixin
 from ui.assembly_editor import AssemblyEditorMixin
+from ui.instance_state import InstanceStateMixin
+from core.object_states import empty_states, validate_states
 from ui.frame_review import FrameReviewMixin
 from core.assembly_timeline import (validate_timeline, resolve_object, noun_at, state_at,
     empty_timeline, reference_id, active_id, merge_at, track_segments)
@@ -1049,7 +1051,7 @@ class HandTrackBuildWorker(QThread):
         self.finished.emit(payload)
 
 
-class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, CorrectionPropagationMixin, ProjectSessionMixin, FrameControlMixin, QWidget):
+class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameReviewMixin, AssemblyEditorMixin, InstanceStateMixin, CorrectionPropagationMixin, ProjectSessionMixin, FrameControlMixin, QWidget):
     """
     HOI event construction annotator:
     - Single video.
@@ -2085,6 +2087,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_inline_assembly.setToolTip('Edit components of the current instance or create an independent assembly.')
         self.btn_inline_assembly.clicked.connect(self._open_assembly_editor)
         inline_form.addWidget(self.btn_inline_assembly)
+        self.btn_inline_instance_state = QPushButton("Object state…")
+        self.btn_inline_instance_state.setVisible(False)
+        self.btn_inline_instance_state.clicked.connect(self._open_instance_state_editor)
+        inline_form.addWidget(self.btn_inline_instance_state)
+        self.combo_inline_noun.activated[int].connect(self._queue_instance_state_editor)
+        self.combo_target.activated[int].connect(self._queue_instance_state_editor)
         try:
             verb_editor = self.combo_inline_verb.lineEdit()
             if verb_editor is not None:
@@ -4018,6 +4026,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         )
         if normalized_object_id is not None:
             self._sync_event_draw_mode(force=True)
+        self._refresh_instance_state_ui()
 
     def _filtered_object_candidates_for_hand(
         self,
@@ -6350,6 +6359,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             for control, previous in refresh_signal_states:
                 control.blockSignals(previous)
             self._inline_editor_sync = False
+            self._refresh_instance_state_ui()
             self._refresh_label_explanations()
             if bool(getattr(self, "_completion_status_refresh_pending", False)):
                 self._completion_status_refresh_pending = False
@@ -12659,6 +12669,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._annotation_provenance = {}
         self.frame_review = {}
         self.shared_assembly = empty_timeline()
+        self.object_states = empty_states()
         self._assembly_default_reference = False
         self.events.clear()
         self.raw_boxes = []
@@ -13474,6 +13485,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return {
             "frame_review": copy.deepcopy(getattr(self,"frame_review",{})),
             "shared_assembly": copy.deepcopy(self._assembly_data()),
+            "object_states": copy.deepcopy(self._instance_states()),
             "assembly_default_reference": getattr(self,"_assembly_default_reference",False),
             "events": copy.deepcopy(self.events),
             "event_id_counter": self.event_id_counter,
@@ -13503,6 +13515,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _restore_state(self, state: dict):
         """Restore a snapshot created by _snapshot_state."""
+        self.object_states = validate_states(state.get("object_states",empty_states()),_PROJECT_PROFILE)
         self.frame_review = copy.deepcopy(state.get("frame_review",{}))
         self.shared_assembly = validate_timeline(state.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
         self._assembly_default_reference = state.get("assembly_default_reference",False)
@@ -18206,9 +18219,12 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             raise ValueError("Shared assembly state is outside the video")
         if any(str(x['object_id']) not in data.get('object_library',{}) for x in shared['states']):
             raise ValueError('Assembly state references an unknown object ID')
+        object_states = validate_states(data.get("object_states",empty_states()),_PROJECT_PROFILE,
+            int(data.get("frame_count",self.player.frame_count)),{int(k) for k in data.get("object_library",{})})
         if 'editor_view' in data:
             self._restore_editor_view(data['editor_view'])
         # Reset state
+        self.object_states = object_states
         self.frame_review = copy.deepcopy(data.get("frame_review",{}))
         self.shared_assembly = shared
         self._assembly_default_reference = data.get("assembly_default_reference",False)
@@ -18956,6 +18972,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 interaction = {}
                 assembly_id = reference_id(h_data,self._assembly_data(),final_start)
                 target_label = (noun_at(self._assembly_data(),final_start,assembly_id) if h_data.get("shared_assembly_ref") else label_for_id(target))
+                target_label = self._instance_state_noun(target,final_start,target_label)
                 event_entry["shared_assembly_ref"] = bool(h_data.get("shared_assembly_ref",False))
                 event_entry["shared_assembly_id"] = assembly_id if h_data.get("shared_assembly_ref") else None
                 event_entry["onset_manually_adjusted"] = bool(h_data.get("_onset_manually_adjusted",False))
@@ -19112,6 +19129,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         payload['provenance'] = copy.deepcopy(getattr(self, '_annotation_provenance', {}))
         payload["frame_review"] = copy.deepcopy(getattr(self,"frame_review",{}))
         payload["shared_assembly"] = validate_timeline(self._assembly_data())
+        payload["object_states"] = validate_states(self._instance_states(),_PROJECT_PROFILE,self.player.frame_count,{int(v) for v in self.global_object_map.values()})
         payload["assembly_default_reference"] = getattr(self,"_assembly_default_reference",False)
         payload["editor_geometry"] = {"suppressed_hand_boxes": list(getattr(self, "_suppressed_hand_boxes", []))}
         if getattr(self, "_unassigned_hand_candidates", {}):
@@ -19124,6 +19142,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._refresh_assembly_caption()
         self._refresh_frame_review_status()
         super()._set_frame_controls(frame)
+        self._refresh_instance_state_ui()
         if getattr(self, "hoi_timeline", None):
             self.hoi_timeline.set_current_frame(frame)
 
@@ -20120,6 +20139,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         payload = {
             "frame_review": getattr(self,"frame_review",{}),
             "shared_assembly": self._assembly_data(),
+            "object_states": self._instance_states(),
             "assembly_default_reference": getattr(self,"_assembly_default_reference",False),
             "events": self.events,
             "raw_boxes": self.raw_boxes,
@@ -20621,7 +20641,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         candidates=[]
         for name,uid in self.global_object_map.items():
             base=self.id_to_category.get(name,name)
-            if instance_category(base,_PROJECT_PROFILE,self.class_map.values()) != category:
+            candidate_category=instance_category(base,_PROJECT_PROFILE,self.class_map.values())
+            same_family=any(category in spec.get('classes',[]) and candidate_category in spec.get('classes',[])
+                            for spec in _PROJECT_PROFILE.get('counted_object_states',{}).values())
+            if candidate_category != category and not same_family:
                 continue
             if active_id(self._assembly_data(),uid,self._assembly_frame()) != uid:
                 continue
@@ -20809,7 +20832,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return default_for_none
         for name, id_val in self.global_object_map.items():
             if id_val == uid:
-                return self._noun_display_name(name)
+                base=self._noun_display_name(name)
+                return self._instance_state_noun(uid,self._assembly_frame(),base)
         if fallback is not None:
             return fallback
         return str(uid)
@@ -22251,6 +22275,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         self._sync_action_panel_selection(hand_data.get("verb", ""))
         self._update_status_label()
+        self._refresh_instance_state_ui()
 
     def _update_status_label(self):
         """Refresh status bar showing the selected HOI event and hand details."""

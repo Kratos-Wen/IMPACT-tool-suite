@@ -6,7 +6,7 @@ from core.instance_category import instance_category
 SCHEMA='video-local-instances-1'
 ROLES={'object_id','noun_object_id','target_object_id','instrument_object_id','tool_object_id',
        'shared_assembly_id','object_instance_id','instrument_instance_id','source_object_id','target_object_id',
-       'assembly_default_reference'}
+       'assembly_default_reference','parent_object_id'}
 HISTORY={'provenance','migration_review','source_record','raw_response','raw_model_output','machine_original',
          'machine_snapshot','raw_snapshot','source_snapshot','source_object_id'}
 
