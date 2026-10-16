@@ -22,15 +22,17 @@ Windows and the optional CPU/CUDA SAM2 backend have separate commands in the ins
 
 ## Project assets
 
-Videos, model weights, preannotations, project profiles, taxonomies and annotation requirements are distributed separately by the project coordinator. They are not included in this public repository. Opening a packaged video loads its local profile and draft through `task.json`. For standalone work, configure a profile with `--project-profile`.
+The current project configuration and taxonomy are versioned in [project_profile.json](project_profile.json). Startup, task imports and remembered sessions use this repository copy, including when an older task points to Shared. Run `git pull` and restart the editor to update both code and configuration; no separate Shared configuration download is needed. Videos, model weights, preannotations and detailed annotation requirements remain separately distributed. Task manifests still locate each video’s annotations and checkpoints.
 
 ## Development checks
 
+Synthetic fixture tests use `IMPACT_USE_BUNDLED_PROFILE=0`, as in CI. `test_repository_profile.py` enables and tests the shipped configuration. External custom projects can also explicitly set this flag to use `--project-profile`; normal annotation uses the repository copy.
+
 ```bash
-python tests/test_instance_edits.py
-python tests/test_correction_propagation.py
-python tests/test_noun_aliases.py
-python tests/test_orientation_guard.py
+IMPACT_USE_BUNDLED_PROFILE=0 python tests/test_instance_edits.py
+IMPACT_USE_BUNDLED_PROFILE=0 python tests/test_correction_propagation.py
+IMPACT_USE_BUNDLED_PROFILE=0 python tests/test_noun_aliases.py
+IMPACT_USE_BUNDLED_PROFILE=0 python tests/test_orientation_guard.py
 ```
 
 See [validation and current limitations](VALIDATION.md). Tracking proposals require human review. Upstream model licenses apply to their respective models.
@@ -71,10 +73,10 @@ A newly drawn manual entity stays visible and editable on its creation frame bef
 
 The editor uses one manual annotation workflow. Project videos load their configuration and existing annotations; imported events and boxes remain editable. SAM correction from a reference box is an optional explicit action. Local automatic detection, action ranking and mode switching are no longer part of the desktop workflow. Saved projects using older modes reopen in the manual workflow.
 
-If a standalone video has empty noun/tool selectors, use **Import → Project Profile...** to load the provided configuration. This adds vocabulary choices without replacing existing annotations. After creating an event, its noun may be selected before its verb. Hand-box record IDs use a separate namespace and do not set the next object/assembly ID.
+Vocabulary loads automatically from the repository configuration, including for standalone videos. **Import → Reload project configuration** rereads that file without replacing existing annotations. After creating an event, its noun may be selected before its verb. Hand-box record IDs use a separate namespace and do not set the next object/assembly ID.
 
 Each video has two anatomical hand entities, `H_LEFT` and `H_RIGHT`. Imports, manual boxes and correction propagation retain the same hand identity across frames and events. Hand IDs are separate from object instance IDs. XML exports contain one track per side with stable IDs 0 (left) and 1 (right); JSON exports record the named hand IDs. Existing recovery geometry is normalized on reload.
 
 A task may also specify `"hand_tracks": "hands.xml"`. Opening its video loads this optional file automatically after the annotation or recovery data. The file must carry matching video identity, frame count and FPS; no time offset is inferred. Existing boxes, deleted-hand records and invisible-hand decisions take precedence. These boxes remain machine candidates and use the same event/keyframe visibility rules. Download the updated `task.json` together with `hands.xml`.
 
-Counted instance states can be configured in the private project profile using `counted_object_states`. Selecting a configured Object opens its state editor; a nearby button reopens it. Counts follow the same physical ID over time and are included in save, recovery and undo. Creating a separated piece explicitly assigns a new ID with a parent reference; changing its state keeps the ID. New pieces appear in Noun without changing existing event references; select the new ID for the appropriate later event.
+Counted instance states can be configured in the repository project profile using `counted_object_states`. Selecting a configured Object opens its state editor; a nearby button reopens it. Counts follow the same physical ID over time and are included in save, recovery and undo. Creating a separated piece explicitly assigns a new ID with a parent reference; changing its state keeps the ID. New pieces appear in Noun without changing existing event references; select the new ID for the appropriate later event.

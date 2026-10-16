@@ -69,11 +69,11 @@ Use the supplied `sam2.1_hiera_small.pt`, or download the [official checkpoint](
 
 ## Load, edit and save
 
-Download your named folder and its sibling `Shared`, preserving their directory structure. Launch the editor, select Manual mode and use the folder button or Load Video... to open `your-name/tasks/reassembly-or-disassembly/trial-id/video.mp4`. Its neighboring `task.json` loads the project profile and `annotations.json`, and registers SAM/YOLO checkpoint paths automatically. An existing `reviewed.json` takes priority; Save defaults to that file. The editor checks trial identity, FPS and frame count.
+Download your named folder and its sibling `Shared`, preserving their directory structure. Launch the editor and use the folder button or Load Video... to open `your-name/tasks/reassembly-or-disassembly/trial-id/video.mp4`. The editor reads the repository-root `project_profile.json`; its neighboring `task.json` loads `annotations.json` and registers SAM/YOLO checkpoint paths. Legacy Shared profile paths do not override the repository configuration. An existing `reviewed.json` takes priority; Save defaults to that file. The editor checks trial identity, FPS and frame count.
 
 Keep `video.mp4` in its task folder. `review.json` retains raw model review material; the main editor uses the editor draft specified by `task.json`. Relaunching restores the last project and playhead. If a newer recovery draft is found, follow the recovery prompt. Audio review is separate: open `review.html` in your assigned audio task directory.
 
-For a standalone video, use `--project-profile "/path/to/project_profile.json"` and Load HOI annotations to select its draft. Legacy editor imports preserve the source in `archived` before conversion.
+Standalone videos use the repository configuration automatically; use Load HOI annotations to select their draft. After `git pull`, restart the editor. A separate Shared configuration download is no longer needed. Import → Reload project configuration rereads the repository copy. Legacy editor imports preserve the source in `archived` before conversion.
 
 Select an event and instance, drag or resize the reference box, then use **Track Correction**. Check the target boxes and choose the frame interval on either side of the current frame. Press OK to queue propagation and continue annotating. The inline bar shows progress in target-frames; **Details** offers cancel and retry/resume. Results automatically appear as unverified boxes. Review them with playback and the Keyframes menu; Undo restores an applied batch. Human edits made during propagation are preserved. Tasks and partial results recover when reopening the same video; unfinished branches restart from their reference frame.
 

@@ -1,0 +1,595 @@
+{
+  "default_anomaly_label": "normal",
+  "anomaly_labels": [
+    "repeated_attempts",
+    "unsuccessful_attempt",
+    "control_loss",
+    "target_mismatch",
+    "instrument_mismatch",
+    "geometric_error"
+  ],
+  "anomaly_aliases": {
+    "rework": "repeated_attempts",
+    "completion": "unsuccessful_attempt",
+    "handling": "control_loss",
+    "wrong_target": "target_mismatch",
+    "wrong_instrument": "instrument_mismatch",
+    "spatial": "geometric_error"
+  },
+  "verbs": [
+    "pick_up",
+    "place",
+    "hold",
+    "give",
+    "receive",
+    "flip",
+    "align",
+    "insert",
+    "extract",
+    "attach",
+    "detach",
+    "tighten",
+    "loosen",
+    "twist",
+    "pull",
+    "press",
+    "cut",
+    "strip",
+    "crimp"
+  ],
+  "forbidden_verbs": {
+    "transfer": "Use independent give / receive / hold; TRANSFER is not a single-hand verb"
+  },
+  "noun_aliases": {
+    "wrench": "combination_wrench",
+    "combination_wrench": "combination_wrench",
+    "flathead_screwdriver": "flat_head_screwdriver",
+    "flat_head_screwdriver": "flat_head_screwdriver",
+    "intermediate_housing": "adapter_plate",
+    "adapter_plate": "adapter_plate",
+    "bevel_gear": "bearing_plate",
+    "bearing_plate": "bearing_plate",
+    "angle_grinder": "assembly",
+    "anti_vibration_handle": "anti_vibration_handle",
+    "crimp_plier": "crimp_plier",
+    "gearbox_housing": "gearbox_housing",
+    "lever": "lever",
+    "nut": "nut",
+    "phillips_screwdriver": "phillips_screwdriver",
+    "screw": "screw_long",
+    "screw_black": "screw_black",
+    "screw_lever": "screw_lever",
+    "screw_short": "screw_short",
+    "screw_wrong": "screw_wrong",
+    "spring": "spring",
+    "terminal": "terminal",
+    "torx_screwdriver_15": "torx_screwdriver_15",
+    "torx_screwdriver_20": "torx_screwdriver_20",
+    "washer": "washer",
+    "wire": "wire",
+    "wire_crimped": "wire_crimped",
+    "wire_cutter": "wire_cutter",
+    "wire_stripper": "wire_stripper",
+    "assembly": "assembly",
+    "crimped_wire": "wire_crimped",
+    "housing_assembly": "assembly",
+    "housings_assembly": "assembly",
+    "gear_assembly": "assembly",
+    "main_assembly": "assembly",
+    "wired_housing_assembly": "assembly",
+    "wired_gear_assembly": "assembly",
+    "wired_main_assembly": "assembly",
+    "handle": "anti_vibration_handle",
+    "screw_long": "screw_long"
+  },
+  "orientation_required_prefixes": [
+    "0409220_"
+  ],
+  "detection_ignored_categories": [
+    "screw",
+    "nut",
+    "screw_black",
+    "screw_short",
+    "screw_lever"
+  ],
+  "detection_matching_aliases": {
+    "tool_torx_tx20": "torx_screwdriver_20",
+    "wire_assembly": "wire_crimped",
+    "gear_housing_wire_assembly": "assembly"
+  },
+  "verb_prefixes": [
+    "pick_up",
+    "put_down",
+    "hand_tighten",
+    "hand_loosen",
+    "hand_spin",
+    "screw_on",
+    "tighten",
+    "loosen",
+    "remove",
+    "insert",
+    "mount",
+    "attach",
+    "detach",
+    "dismount",
+    "extract",
+    "place",
+    "store",
+    "hold",
+    "flip",
+    "thread",
+    "adjust",
+    "align",
+    "seat",
+    "retrieve",
+    "install",
+    "unscrew",
+    "start",
+    "finish"
+  ],
+  "assembly_components": [
+    "gearbox_housing",
+    "adapter_plate",
+    "bearing_plate",
+    "anti_vibration_handle",
+    "lever",
+    "spring",
+    "wire",
+    "wire_crimped",
+    "terminal",
+    "washer",
+    "screw_lever"
+  ],
+  "assembly_interfaces": [
+    {
+      "id": "bearing_plate--gearbox_housing",
+      "base_component": "gearbox_housing",
+      "completed_component": "bearing_plate",
+      "fastener_by_model": {
+        "A": "screw_short",
+        "B": "screw_black"
+      }
+    },
+    {
+      "id": "adapter_plate--gearbox_housing",
+      "base_component": "gearbox_housing",
+      "completed_component": "adapter_plate",
+      "fastener_class": "screw_long",
+      "slot_components": [
+        "nut"
+      ]
+    }
+  ],
+  "anomaly_display_names": {
+    "repeated_attempts": "Repeated attempts",
+    "unsuccessful_attempt": "Unsuccessful attempt",
+    "control_loss": "Control loss",
+    "target_mismatch": "Target mismatch",
+    "instrument_mismatch": "Instrument mismatch",
+    "geometric_error": "Geometric error"
+  },
+  "legacy_anomaly_candidates": {
+    "rework": [
+      "repeated_attempts"
+    ],
+    "completion": [
+      "unsuccessful_attempt"
+    ],
+    "handling": [
+      "control_loss"
+    ],
+    "wrong_target": [
+      "target_mismatch"
+    ],
+    "wrong_instrument": [
+      "instrument_mismatch"
+    ],
+    "error_wrong_part": [
+      "target_mismatch"
+    ],
+    "error_wrong_tool": [
+      "instrument_mismatch"
+    ]
+  },
+  "legacy_assembly_mappings": {
+    "housing_assembly": [
+      "gearbox_housing",
+      "adapter_plate"
+    ],
+    "housings_assembly": [
+      "gearbox_housing",
+      "adapter_plate"
+    ],
+    "main_assembly": [
+      "gearbox_housing",
+      "adapter_plate",
+      "bearing_plate",
+      "anti_vibration_handle"
+    ],
+    "wired_housing_assembly": [
+      "gearbox_housing",
+      "adapter_plate",
+      "wire_crimped"
+    ],
+    "wired_main_assembly": [
+      "gearbox_housing",
+      "adapter_plate",
+      "wire_crimped",
+      "bearing_plate"
+    ],
+    "gear_assembly": null,
+    "wired_gear_assembly": null
+  },
+  "model_component_rules": {
+    "A": {
+      "forbidden_components": [
+        "screw_black"
+      ]
+    },
+    "B": {
+      "forbidden_components": [
+        "lever",
+        "screw_lever",
+        "screw_short"
+      ],
+      "accessory_scope_pending": [
+        "spring"
+      ]
+    }
+  },
+  "annotation_schema": "hoi-annotation",
+  "video_mirrored": false,
+  "verb_aliases": {
+    "put_down": "place",
+    "hand_tighten": "tighten",
+    "hand_loosen": "loosen",
+    "hand_loose": "loosen",
+    "ajust": "adjust"
+  },
+  "noun_classes": [
+    "adapter_plate",
+    "anti_vibration_handle",
+    "assembly",
+    "bearing_plate",
+    "combination_wrench",
+    "crimp_plier",
+    "flat_head_screwdriver",
+    "gearbox_housing",
+    "lever",
+    "nut",
+    "phillips_screwdriver",
+    "screw_long",
+    "screw_black",
+    "screw_lever",
+    "screw_short",
+    "screw_wrong",
+    "spring",
+    "terminal",
+    "torx_screwdriver_15",
+    "torx_screwdriver_20",
+    "washer",
+    "wire",
+    "wire_crimped",
+    "wire_cutter",
+    "wire_stripper"
+  ],
+  "create_default_noun_instances": true,
+  "noun_explanations": {
+    "adapter_plate": {
+      "en": "Individual adapter/intermediate housing part. Former label: intermediate_housing. Count it in assembly only after the connection is completed.",
+      "zh": "独立的转接/中间壳体零件，旧名intermediate_housing。连接完成后才加入assembly组成。"
+    },
+    "anti_vibration_handle": {
+      "en": "Individual anti-vibration side handle; its presence in assembly must be checked visually.",
+      "zh": "独立的防振侧手柄。是否已装入assembly需看画面确认。"
+    },
+    "assembly": {
+      "en": "Two or more parts with completed connections. Composition is maintained per physical instance ID; hands referencing the same ID share its state. Independent subassemblies use different IDs. At a confirmed merge, keep the receiving ID and end the inserted track. One remaining part uses its part noun. Add a two-screw connection after both screws are secured; remove the component at the first actual loosening.",
+      "zh": "两个及以上完成连接的零件。按物理实例ID维护组成，两手引用同一ID时共享状态；独立子装配体使用不同ID。合并完成后保留接收方ID，结束被并入者的独立轨迹。仅剩单件时用该零件名；双螺钉连接在两颗均拧紧稳定后增加组成，拆卸在第一颗实际松动时移除对应组成。"
+    },
+    "bearing_plate": {
+      "en": "Individual bearing plate/support part, distinct from adapter_plate. Former label: bevel_gear.",
+      "zh": "独立的轴承支承板，与adapter_plate不同。旧名bevel_gear。"
+    },
+    "combination_wrench": {
+      "en": "Combination wrench/spanner. Merge the former wrench label into this category.",
+      "zh": "两用扳手。旧wrench统一用此名。"
+    },
+    "crimp_plier": {
+      "en": "Crimping pliers used to compress a terminal onto wire.",
+      "zh": "用于将端子压接到导线上的压接钳。"
+    },
+    "flat_head_screwdriver": {
+      "en": "Screwdriver with a flat/slotted tip. Former spelling: flathead_screwdriver.",
+      "zh": "一字螺丝刀。旧拼写flathead_screwdriver。"
+    },
+    "gearbox_housing": {
+      "en": "Individual gearbox housing part, before composition with other completed attachments.",
+      "zh": "独立齿轮箱壳体零件。与其他零件完成连接后按共享组成记录。"
+    },
+    "lever": {
+      "en": "Individual lever of the A-model mechanism. Model B has no lever mechanism.",
+      "zh": "A型号机构中的独立拨杆；B型号没有此机构。"
+    },
+    "nut": {
+      "en": "Two physical nuts, one per screw_long slot; use separate instance IDs for HOI events. Each slot records one joint secured state for its screw_long and nut. Do not select nuts separately in the assembly component list.",
+      "zh": "两颗独立螺母，分别对应两个screw_long孔位，HOI事件使用各自的实例ID。每个孔位只记录螺钉和螺母共同锁紧的状态，不在装配组成中重复勾选nut。"
+    },
+    "phillips_screwdriver": {
+      "en": "Screwdriver with a cross-shaped Phillips tip.",
+      "zh": "十字螺丝刀。"
+    },
+    "screw_black": {
+      "en": "Model B connection screw for bearing_plate–gearbox_housing. Distinguish physical IDs from Slot 1/2.",
+      "zh": "B型bearing_plate–gearbox_housing连接螺钉。实物ID与孔位1/2分开记录。"
+    },
+    "screw_lever": {
+      "en": "Screw belonging to the A-model lever mechanism.",
+      "zh": "A型号lever机构的配套螺钉。"
+    },
+    "screw_short": {
+      "en": "Model A connection screw for bearing_plate–gearbox_housing. Distinguish physical IDs from Slot 1/2.",
+      "zh": "A型bearing_plate–gearbox_housing连接螺钉。实物ID与孔位1/2分开记录。"
+    },
+    "screw_wrong": {
+      "en": "The different long screw identified for this study. Keep this annotator name until its professional name is confirmed. Category alone does not imply an anomalous event.",
+      "zh": "本实验中那个不同的长螺钉。专业名称确认前保留此标注名；此名词本身不代表该event有异常。"
+    },
+    "spring": {
+      "en": "Individual spring. Distinguish a lever accessory from any independent spring by the visible part; the lever mechanism exists only in model A.",
+      "zh": "独立弹簧。按画面区分lever配件与独立弹簧；lever机构仅存在于A型号。"
+    },
+    "terminal": {
+      "en": "Each wire has one terminal at each end. Use separate instance IDs for the two terminals.",
+      "zh": "同一根导线的两端各有一个端子，两颗端子分别使用实例ID。"
+    },
+    "torx_screwdriver_15": {
+      "en": "Torx screwdriver with TX15 tip; use the verified size rather than guessing from the handle.",
+      "zh": "TX15规格的Torx螺丝刀；按确认的规格选择。"
+    },
+    "torx_screwdriver_20": {
+      "en": "Torx screwdriver with TX20 tip; use the verified size rather than guessing from the handle.",
+      "zh": "TX20规格的Torx螺丝刀；按确认的规格选择。"
+    },
+    "washer": {
+      "en": "Individual washer placed around a fastener.",
+      "zh": "独立垫圈。"
+    },
+    "wire": {
+      "en": "Wire with no completed terminal crimp. An inserted terminal or a failed crimp does not complete the crimp.",
+      "zh": "尚无任何一端完成端子压接的导线。仅放入端子或压接失败时保持此名称。"
+    },
+    "wire_crimped": {
+      "en": "Wire with at least one currently attached, successfully crimped end. Use the Wire state editor to record 1 or 2. Removing terminals changes the count on the same ID.",
+      "zh": "至少一端仍连接着成功压接端子的导线。在Wire窗口记录完成端数1或2；剪去端子时修改端数，沿用原导线ID。"
+    },
+    "wire_cutter": {
+      "en": "Wire-cutting tool used to sever wire.",
+      "zh": "用于切断导线的剪线工具。"
+    },
+    "wire_stripper": {
+      "en": "Wire-stripping tool used to remove insulation.",
+      "zh": "用于去除导线绝缘层的剥线工具。"
+    },
+    "screwdriver": {
+      "en": "Legacy generic screwdriver. Select the visible tip category: Phillips, flat head, TX15 or TX20.",
+      "zh": "旧稿中的泛称螺丝刀。按可见刀头改为十字、一字、TX15或TX20。"
+    },
+    "pliers": {
+      "en": "Legacy generic pliers. Identify crimping, cutting or stripping function and select the actual tool.",
+      "zh": "旧稿中的泛称钳子。根据压接、剪切或剥线功能选择实际工具。"
+    },
+    "gear": {
+      "en": "Legacy ambiguous gear label. Verify the pictured part before replacing it with a standard noun.",
+      "zh": "旧稿中的未明确gear名称。按画面确认具体零件后再选标准名词。"
+    },
+    "hand": {
+      "en": "Hand entity. Choose anatomical Left Hand or Right Hand; use a part/tool category for Object or instrument.",
+      "zh": "手部实体。使用人的左手或右手；Object和instrument选择零件或工具。"
+    },
+    "left_hand": {
+      "en": "The person’s anatomical left hand, independent of screen position.",
+      "zh": "人的生理左手，与画面左右位置无关。"
+    },
+    "right_hand": {
+      "en": "The person’s anatomical right hand, independent of screen position.",
+      "zh": "人的生理右手，与画面左右位置无关。"
+    },
+    "screw_long": {
+      "en": "Standard long connection screw. Former noun: screw. Distinguish it from screw_wrong, the different long screw. Physical IDs and connection slots are separate; exact specification will be mapped later. Used with a nut to connect adapter_plate to gearbox_housing.",
+      "zh": "标准长连接螺钉，旧名screw。与screw_wrong那颗不同规格的长螺钉区分。实物ID与连接槽位分开记录；具体规格后续统一映射。 用于adapter_plate与gearbox_housing连接，与对应nut共同锁紧。"
+    }
+  },
+  "verb_explanations": {
+    "pick_up": {
+      "en": "Acquire a free item from a surface/storage. Start: direct pickup approach; Onset: first grasp contact; End: controlled lift or final pickup effort. Hovering or resting a hand is not evidence of failure. An unsuccessful attempt requires an observable grasp/lift effort ending without acquisition.",
+      "zh": "从桌面或存放处拿起物品。S为直接拾取接近开始；Onset为首次抓取接触；E为受控提起或最后拾取尝试结束。悬停、搭手本身不证明失败；明确抓取/提起尝试结束而未取得物品，才标未成功。"
+    },
+    "place": {
+      "en": "Place an item on a support or in a container. Start: placement begins; End: last placement stroke/control.",
+      "zh": "将物品放到支撑面或容器中。S为放置动作开始；E为最后放置动作或控制结束。"
+    },
+    "hold": {
+      "en": "Independent holding, supporting or carrying. Onset defaults to Start; the boundary remains adjustable. Holding inherent to another operation does not need a separate event.",
+      "zh": "独立持握、支撑或携带。O默认等于S，可微调。其他操作中自带的持握无需另建hold事件。"
+    },
+    "give": {
+      "en": "Present and cooperatively release an item to the other hand. End at last control or final giving effort.",
+      "zh": "向另一只手交出物品。E为最后控制结束或交出尝试结束；两手动词分别填写。"
+    },
+    "receive": {
+      "en": "Take an item directly from the other hand. Start: direct approach; End: receiving action ends.",
+      "zh": "直接从另一只手接过物品。S为直接接近开始；E为接取动作结束。"
+    },
+    "flip": {
+      "en": "Change the working face of an item. Start/End bound the face change; ordinary carrying/reorientation remains hold.",
+      "zh": "翻转物品以切换工作面，S/E覆盖翻转过程；普通携带和调整朝向用hold。"
+    },
+    "align": {
+      "en": "Independent alignment to an identifiable reference. End before feeding/driving starts, or when alignment terminates.",
+      "zh": "独立对准可识别的参照位置。E为插入/驱动开始前一帧，或对准动作终止。"
+    },
+    "insert": {
+      "en": "Feed into a receiving hole/slot, including blocked attempts. Start: first inward feed; Onset: first part contact at the insertion target, including blocked contact; End: last feeding effort. Keep earlier attempts and their keyframes; do not move Onset to the final successful attempt.",
+      "zh": "向接收孔或槽送入，包括受阻尝试。S为首次向内送入；Onset为零件首次接触插入目标，包括受阻接触；E为最后送入动作结束。保留前面尝试和关键帧，不把Onset移到最后成功的一次。"
+    },
+    "extract": {
+      "en": "Withdraw from a receiving hole/slot. Start: withdrawal begins; End: last withdrawal effort.",
+      "zh": "从接收孔或槽拔出。S为拔出开始；E为最后拔出动作结束。"
+    },
+    "attach": {
+      "en": "Connect at an exposed mating face, end or hook. Start: connection begins; End: last connection effort. A free screw attached to a driver tip uses attach.",
+      "zh": "在外露配合面、端部或挂接处连接。S为连接开始；E为最后连接动作结束。将独立螺钉接到螺丝刀头上用attach。"
+    },
+    "detach": {
+      "en": "Disconnect an exposed mating interface. Start: disconnection begins; End: last disconnection effort.",
+      "zh": "断开外露配合界面的连接。S为断开开始；E为最后断开动作结束。"
+    },
+    "tighten": {
+      "en": "Drive a known thread in its fastening direction, by hand or tool. Start: first fastening stroke; End: final drive and integral return.",
+      "zh": "用手或工具沿已知螺纹紧固方向驱动。S为首次紧固动作；E包含最终驱动及同一操作的回程。"
+    },
+    "loosen": {
+      "en": "Drive a known thread in its release direction. Screen rotation alone is insufficient. Start: first release stroke; End: final drive and integral return.",
+      "zh": "沿已知螺纹松开方向驱动。不能只按画面旋转方向判断。S为首次松开动作；E包含最终驱动及同一操作的回程。"
+    },
+    "twist": {
+      "en": "Non-threaded relative axial/material twisting. Start: first relative twist; End: last twisting stroke.",
+      "zh": "非螺纹紧固的相对轴向扭转或材料扭转。S为首次扭转；E为最后扭转动作结束。"
+    },
+    "pull": {
+      "en": "Apply tension to constrained material or draw out length. Prefer extract/detach/strip when one of those specific operations applies.",
+      "zh": "对受约束材料施加拉力或拉出长度。符合extract、detach、strip时优先用具体动词。"
+    },
+    "press": {
+      "en": "Independent pressing of a button/latch/lever, or an unloaded handle reset/release. End includes integral return.",
+      "zh": "独立按压按钮、锁扣、拨杆，或空载手柄复位/释放；E包含同一操作的回程。"
+    },
+    "cut": {
+      "en": "Cut an actual target. Start: first cutting stroke; End: cut and integral return. Add a keyframe at separation.",
+      "zh": "切断实际目标。S为首次切割动作；E包含切断及同一操作的回程。分离帧要补关键帧。"
+    },
+    "strip": {
+      "en": "Remove a covering in a stripping cycle. Start: first stripping stroke/cycle; End: the stripping cycle ends.",
+      "zh": "通过剥除过程去掉覆盖层。S为首次剥除动作或周期开始；E为该周期结束。"
+    },
+    "crimp": {
+      "en": "Compress an actual terminal in a crimping cycle. Ratchet advances belong to the same cycle. Start: target-directed closing; End: final crimp and integral return. Failed attempts keep this verb.",
+      "zh": "在压接周期中压合实际端子；棘轮多次推进属于同一周期。S为朝目标合拢开始；E包含最终压接及回程。失败仍用crimp。"
+    },
+    "adjust": {
+      "en": "Legacy broad adjustment. Choose the executed operation, e.g. align, flip or twist.",
+      "zh": "旧稿中的泛称调整。按实际动作选择align、flip或twist等具体动词。"
+    },
+    "move": {
+      "en": "Legacy broad motion. Choose pick_up, place, hold, give or receive according to the interaction.",
+      "zh": "旧稿中的泛称移动。根据交互选择pick_up、place、hold、give或receive。"
+    },
+    "screw": {
+      "en": "Legacy thread operation. Reassess tightening, loosening or insertion from visible motion and thread engagement.",
+      "zh": "旧稿中的泛称拧螺钉。按可见操作和螺纹啮合选择tighten、loosen或insert。"
+    },
+    "unscrew": {
+      "en": "Legacy unscrewing. Use loosen for thread release; use extract/detach for a separate removal phase.",
+      "zh": "旧稿中的旋松。螺纹松开用loosen；独立拔出/断开阶段用extract或detach。"
+    },
+    "remove": {
+      "en": "Legacy generic removal. Select extract for withdrawal from a hole/slot, detach for interface separation, or loosen for thread release.",
+      "zh": "旧稿中的泛称移除。从孔槽拔出用extract，断开配合界面用detach，螺纹松开用loosen。"
+    }
+  },
+  "ambiguous_nouns": [
+    "screwdriver",
+    "pliers",
+    "gear",
+    "hand"
+  ],
+  "deprecated_verbs": [
+    "adjust",
+    "move",
+    "screw",
+    "unscrew",
+    "remove"
+  ],
+  "singleton_noun_classes": [
+    "adapter_plate",
+    "anti_vibration_handle",
+    "bearing_plate",
+    "combination_wrench",
+    "crimp_plier",
+    "flat_head_screwdriver",
+    "gearbox_housing",
+    "lever",
+    "phillips_screwdriver",
+    "spring",
+    "torx_screwdriver_15",
+    "torx_screwdriver_20",
+    "washer",
+    "wire_cutter",
+    "wire_stripper"
+  ],
+  "singleton_object_ids": {
+    "adapter_plate": 1000,
+    "anti_vibration_handle": 1002,
+    "bearing_plate": 1004,
+    "combination_wrench": 1005,
+    "crimp_plier": 1006,
+    "flat_head_screwdriver": 1007,
+    "gearbox_housing": 1008,
+    "lever": 1009,
+    "phillips_screwdriver": 1011,
+    "spring": 1017,
+    "torx_screwdriver_15": 1019,
+    "torx_screwdriver_20": 1020,
+    "washer": 1021,
+    "wire_cutter": 1024,
+    "wire_stripper": 1025
+  },
+  "annotation_sampling_mode": "soe_anomaly_keyframes",
+  "bbox_review_mode": "paused_view_or_manual_edit",
+  "object_id_policy": "video_local",
+  "automatic_tracking_import": "all",
+  "rejected_noun_classes": [
+    "unresolved_object"
+  ],
+  "automatic_tracking_import_limit": "all",
+  "assembly_slot_managed_components": [
+    "screw_long",
+    "screw_short",
+    "screw_black",
+    "nut"
+  ],
+  "assembly_forbidden_components": [
+    "screw_wrong"
+  ],
+  "instrument_classes": [
+    "combination_wrench",
+    "crimp_plier",
+    "flat_head_screwdriver",
+    "phillips_screwdriver",
+    "torx_screwdriver_15",
+    "torx_screwdriver_20",
+    "wire_cutter",
+    "wire_stripper"
+  ],
+  "compact_import_ids": true,
+  "counted_object_states": {
+    "wire": {
+      "classes": [
+        "wire",
+        "wire_crimped"
+      ],
+      "maximum": 2,
+      "attribute": "crimped_ends",
+      "noun_by_count": {
+        "0": "wire",
+        "1": "wire_crimped",
+        "2": "wire_crimped"
+      },
+      "title": "Wire",
+      "prompt": "Successfully crimped ends:",
+      "new_label": "Cut from coil: create a new wire ID",
+      "help": "Count completed ends, not pressing attempts. Cutting off a terminal changes 2 → 1 → 0 on this same wire ID. Only a separate piece cut from the coil gets a new ID. Keep the last confirmed state through occlusion. An unverified old wire_crimped label does not determine whether 1 or 2 ends are complete."
+    }
+  }
+}

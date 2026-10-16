@@ -1,4 +1,4 @@
-"""Portable desktop launcher; project assets stay outside source control."""
+"""Portable desktop launcher; video and model assets stay outside source control."""
 import argparse, os, runpy, sys
 from pathlib import Path
 
@@ -9,6 +9,9 @@ def main():
     parser.add_argument("--sam-python")
     parser.add_argument("--device", choices=("cpu", "cuda"))
     args, remaining = parser.parse_known_args()
+    root = Path(__file__).resolve().parent
+    if os.environ.get('IMPACT_USE_BUNDLED_PROFILE','1') != '0':
+        args.project_profile = str(root / 'project_profile.json')
     for key, value in (("IMPACT_PROJECT_PROFILE", args.project_profile),
                        ("IMPACT_SAM2_CHECKPOINT", args.sam_checkpoint),
                        ("IMPACT_SAM2_PYTHON", args.sam_python)):

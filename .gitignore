@@ -6,7 +6,6 @@ Thumbs.db
 runtime_artifacts/
 weights/
 private/
-project_profile.json
 *.pt
 *.pth
 *.ckpt

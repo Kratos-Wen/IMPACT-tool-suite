@@ -1311,7 +1311,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.file_menu.addSeparator()
         import_menu = self.file_menu.addMenu("Import")
         self.import_menu = import_menu
-        self.act_load_project_profile = import_menu.addAction("Project Profile...", self._load_project_profile)
+        from core.project_profile import repository_profile_enabled
+        self.act_load_project_profile = import_menu.addAction("Reload project configuration" if repository_profile_enabled() else "Project Profile...", self._load_project_profile)
         self.act_import_targets = import_menu.addAction("Noun List...", self._import_targets)
         self.act_prune_object_library = import_menu.addAction(
             "Prune Object Library To Current Nouns",
@@ -10401,6 +10402,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _load_project_profile(self, path=None, *, checkpoint=True):
         """Load missing vocabulary without replacing events, boxes or instance IDs."""
+        from core.project_profile import resolve_profile_path
+        path = resolve_profile_path(path)
         if not path:
             path, _ = QFileDialog.getOpenFileName(self, "Load project profile", "", "JSON Files (*.json)")
         if not path:
@@ -10473,7 +10476,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             return False
         data, paths = task["data"], task["paths"]
         # Validate every required input before changing profile or annotations.
-        profile = paths.get("project_profile")
+        from core.project_profile import resolve_profile_path
+        profile = resolve_profile_path(paths.get("project_profile"))
         if profile is None or not profile.is_file():
             raise ValueError("Task project_profile.json is missing")
         profile_data = json.loads(profile.read_text(encoding="utf-8-sig"))

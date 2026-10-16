@@ -52,7 +52,8 @@ class ProjectSessionMixin:
                 raise ValueError('The previous annotation file is unavailable. Open the project manually.')
             from core.task_assets import resolve_task
             task=resolve_task(video)
-            profile=data.get('profile','')
+            from core.project_profile import resolve_profile_path
+            profile=resolve_profile_path(data.get('profile',''))
             if not task and profile:
                 if not Path(profile).is_file():raise ValueError('The previous project profile is unavailable.')
                 if not self._load_project_profile(profile,checkpoint=False):

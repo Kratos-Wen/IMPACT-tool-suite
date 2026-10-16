@@ -32,6 +32,7 @@ jobs:
     timeout-minutes: 20
     env:
       SAM2_BUILD_CUDA: '0'
+      IMPACT_USE_BUNDLED_PROFILE: '0'
       OMP_NUM_THREADS: '1'
       MKL_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
