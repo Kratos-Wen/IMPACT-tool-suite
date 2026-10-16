@@ -33,16 +33,25 @@ class InstanceStateMixin:
             count='?' if s is None or s['count'] is None else str(s['count'])
             button.setText(f"{spec.get('title','Object state')} [ID {uid}]: {count}/{spec['maximum']}…")
         # Refresh text only. Never emit selection changes or create instances on seek.
-        classes={n for spec in PROFILE.get('counted_object_states',{}).values() for n in spec.get('classes',[])}
-        ids={obj for name,obj in self.global_object_map.items() if self._noun_display_name(name) in classes}
+        kinds={n:k for k,spec in PROFILE.get('counted_object_states',{}).items() for n in spec.get('classes',[])}
+        bases={obj:self._noun_display_name(name) for name,obj in self.global_object_map.items()}
+        current={}
+        for s in self._instance_states().get('states',[]):
+            if s['frame']<=self._assembly_frame():current[s['object_id']]=s
+        labels={}
+        for obj,base in bases.items():
+            if base not in kinds:continue
+            s=current.get(obj)
+            noun=base if s is None or s['count'] is None else PROFILE['counted_object_states'][s['kind']]['noun_by_count'][str(s['count'])]
+            labels[obj]=f'[{obj}] {noun}'
         for name in ('combo_target','combo_inline_noun'):
             combo=getattr(self,name,None)
             if combo is None:continue
             old=combo.blockSignals(True)
             try:
-                for obj in ids:
-                    i=combo.findData(obj)
-                    if i>=0:combo.setItemText(i,f'[{obj}] {self._object_name_for_id(obj)}')
+                for i in range(combo.count()):
+                    text=labels.get(combo.itemData(i))
+                    if text is not None and combo.itemText(i)!=text:combo.setItemText(i,text)
             finally:combo.blockSignals(old)
 
     def _queue_instance_state_editor(self,*args):
