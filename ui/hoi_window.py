@@ -1986,7 +1986,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(6)
+        root.setSpacing(3)
 
         top_block = QWidget(self)
         top_layout = QVBoxLayout(top_block)
@@ -2041,10 +2041,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.inline_event_card = QFrame(self)
         self.inline_event_card.setObjectName("statusCard")
         inline_layout = QVBoxLayout(self.inline_event_card)
-        inline_layout.setContentsMargins(10, 8, 10, 8)
-        inline_layout.setSpacing(6)
+        inline_layout.setContentsMargins(8, 4, 8, 4)
+        inline_layout.setSpacing(4)
 
         inline_header = QHBoxLayout()
+        self.inline_header_layout = inline_header
         inline_header.setContentsMargins(0, 0, 0, 0)
         self.lbl_inline_event_title = QLabel("Quick Edit")
         self.lbl_inline_event_title.setObjectName("statusTitle")
@@ -2156,7 +2157,25 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         except Exception:
             pass
         inline_extra_form.addWidget(self.combo_inline_anomaly, 1)
-        inline_layout.addLayout(inline_extra_form)
+        inline_layout.removeItem(inline_form)
+        for old_layout in (inline_form, inline_extra_form):
+            while old_layout.count():
+                old_layout.takeAt(0)
+            old_layout.deleteLater()
+        self.inline_fields_layout = QGridLayout()
+        self.inline_fields_layout.setContentsMargins(0, 0, 0, 0)
+        self.inline_fields_layout.setHorizontalSpacing(6)
+        self.inline_fields_layout.setVerticalSpacing(4)
+        for control in (self.combo_inline_verb, self.combo_inline_noun,
+                        self.combo_inline_instrument, self.combo_inline_anomaly):
+            control.setMinimumWidth(120)
+            control.setMinimumContentsLength(16)
+            control.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            control.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._inline_fields_wide = None
+        inline_layout.addLayout(self.inline_fields_layout)
+        self._layout_inline_fields()
+        self.inline_event_card.installEventFilter(self)
 
         self.inline_grounding_card = QFrame(self.inline_event_card)
         self.inline_grounding_card.setObjectName("groundingAssistCard")
@@ -2166,7 +2185,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.lbl_inline_grounding_title = QLabel("Grounding")
         self.lbl_inline_grounding_title.setObjectName("groundingAssistTitle")
         self.lbl_inline_grounding_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_inline_grounding_title.setMinimumWidth(82)
+        self.lbl_inline_grounding_title.setMinimumWidth(140)
         grounding_layout.addWidget(self.lbl_inline_grounding_title)
         self.btn_inline_detect_objects = QPushButton("Find Boxes")
         self.btn_inline_detect_objects.setProperty("groundingAction", True)
@@ -2182,9 +2201,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.lbl_inline_object_candidates = QLabel("Object candidates will appear here.")
         self.lbl_inline_object_candidates.setObjectName("groundingAssistText")
         self.lbl_inline_object_candidates.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.lbl_inline_object_candidates.setWordWrap(False)
+        self.lbl_inline_object_candidates.setWordWrap(True)
         self.lbl_inline_object_candidates.setMinimumWidth(180)
-        self.lbl_inline_object_candidates.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.lbl_inline_object_candidates.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         grounding_layout.addWidget(self.lbl_inline_object_candidates, 1)
         inline_candidate_row = QHBoxLayout()
         inline_candidate_row.setContentsMargins(0, 0, 0, 0)
@@ -2207,10 +2226,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         grounding_layout.addWidget(self.btn_inline_detect_objects)
 
         inline_actions = QHBoxLayout()
+        self.inline_actions_layout = inline_actions
         inline_actions.setContentsMargins(0, 0, 0, 0)
         inline_actions.setSpacing(6)
-        inline_actions.addWidget(self.inline_grounding_card, 1)
-        inline_actions.addSpacing(2)
+        inline_layout.addWidget(self.inline_grounding_card)
         self.btn_inline_edit_boxes = QPushButton("Edit Boxes")
         self.btn_inline_edit_boxes.setCheckable(True)
         self.btn_inline_edit_boxes.setProperty("compactChip", True)
@@ -2239,6 +2258,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_anomaly_keyframe.setToolTip('Add the current frame as anomaly evidence; draw the hand, object and tool boxes here.')
         self.btn_anomaly_keyframe.clicked.connect(self._require_current_frame)
         inline_actions.addWidget(self.btn_anomaly_keyframe)
+        inline_actions.addWidget(self.btn_inline_instance_state)
         inline_actions.addSpacing(4)
         self.btn_inline_confirm_onset = QPushButton("Confirm Onset")
         self.btn_inline_confirm_onset.clicked.connect(self._confirm_inline_onset)
@@ -2248,6 +2268,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         inline_actions.addWidget(self.btn_inline_apply_query)
         inline_actions.addStretch(1)
         inline_layout.addLayout(inline_actions)
+        self._inline_commands_compact = None
+        self._layout_inline_commands()
 
         self.lbl_inline_query_hint = QLabel("The most relevant next step will appear here.")
         self.lbl_inline_query_hint.setObjectName("inlineActionHint")
@@ -2445,6 +2467,17 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._update_verb_combo()
         self._init_autosave()
         self._init_tracking_tasks()
+        self.status_footer = QWidget(self)
+        status_layout = QHBoxLayout(self.status_footer)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(12)
+        for widget, stretch in ((self.lbl_autosave, 1), (self._tracking_row, 2)):
+            root.removeWidget(widget)
+            status_layout.addWidget(widget, stretch)
+        self.lbl_autosave.setWordWrap(True)
+        self.lbl_autosave.setMinimumWidth(0)
+        self._tracking_label.setWordWrap(True)
+        root.addWidget(self.status_footer)
         self._set_verb_library_admin_mode(False)
         self._update_draw_mode_visibility()
         self._update_inline_edit_boxes_button_state()
@@ -3639,6 +3672,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         splitter = getattr(self, "hoi_bottom_split", None)
         if tabs is not None:
             tabs.setVisible(self._advanced_inspector_visible)
+        summary = getattr(self, "lbl_inline_event_summary", None)
+        if summary is not None:
+            summary.setVisible(self._advanced_inspector_visible)
         if splitter is not None:
             try:
                 splitter.setSizes(
@@ -6360,6 +6396,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 control.blockSignals(previous)
             self._inline_editor_sync = False
             self._refresh_instance_state_ui()
+            self.lbl_inline_event_title.setToolTip(self.lbl_inline_event_summary.text())
             self._refresh_label_explanations()
             if bool(getattr(self, "_completion_status_refresh_pending", False)):
                 self._completion_status_refresh_pending = False
@@ -8244,7 +8281,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         tab_pad_v = self._scaled_ui_px(3, 2)
         tab_pad_h = self._scaled_ui_px(8, 6)
         tab_min_w = self._scaled_ui_px(52, 48)
-        control_h = max(self._scaled_ui_px(22, 20), int(math.ceil(body_pt * 96 / 72)) + 10)
+        control_h = max(self._scaled_ui_px(20, 20), int(math.ceil(body_pt * 96 / 72)) + 6)
         control_radius = self._scaled_ui_px(7, 6)
         control_pad_v = self._scaled_ui_px(1.5, 1)
         control_pad_h = self._scaled_ui_px(5, 4)
@@ -8406,8 +8443,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             }}
             QLabel#inlineActionHint {{
                 border-radius: 10px;
-                padding: 10px 12px;
-                font-size: {body_pt + 1.4:.1f}pt;
+                padding: 4px 8px;
+                font-size: {body_pt:.1f}pt;
                 font-weight: 700;
             }}
             QLabel#inlineActionHint[hintRole="neutral"] {{
@@ -8632,7 +8669,63 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         except Exception:
             pass
 
+    def _layout_inline_fields(self):
+        layout = getattr(self, "inline_fields_layout", None)
+        if layout is None:
+            return
+        wide = self.inline_event_card.width() >= 1100
+        if wide == self._inline_fields_wide:
+            return
+        self._inline_fields_wide = wide
+        fields = (
+            (self.lbl_inline_verb, self.combo_inline_verb),
+            (self.lbl_inline_noun, self.combo_inline_noun),
+            (self.lbl_inline_instrument, self.combo_inline_instrument),
+            (self.lbl_inline_anomaly, self.combo_inline_anomaly),
+        )
+        for label, control in fields:
+            layout.removeWidget(label)
+            layout.removeWidget(control)
+        layout.removeWidget(self.btn_inline_assembly)
+        for col in range(9):
+            layout.setColumnStretch(col, 0)
+        for index, (label, control) in enumerate(fields):
+            row, column = (0, index * 2) if wide else (index // 2, index % 2 * 2)
+            layout.addWidget(label, row, column)
+            layout.addWidget(control, row, column + 1)
+            layout.setColumnStretch(column + 1, 1)
+        layout.addWidget(self.btn_inline_assembly, 0, 8 if wide else 4)
+
+    def _layout_inline_commands(self):
+        actions = getattr(self, "inline_actions_layout", None)
+        if actions is None:
+            return
+        compact = self.inline_event_card.width() >= 1100
+        if compact == self._inline_commands_compact:
+            return
+        self._inline_commands_compact = compact
+        header = self.inline_header_layout
+        outer = self.inline_event_card.layout()
+        widgets = (self.lbl_inline_event_title, self.lbl_inline_event_step,
+                   self.btn_inline_toggle_advanced)
+        for widget in widgets:
+            header.removeWidget(widget)
+            actions.removeWidget(widget)
+        outer.removeItem(header)
+        if compact:
+            actions.insertWidget(0, self.lbl_inline_event_title)
+            actions.addWidget(self.lbl_inline_event_step)
+            actions.addWidget(self.btn_inline_toggle_advanced)
+        else:
+            header.addWidget(self.lbl_inline_event_title, 1)
+            header.addWidget(self.lbl_inline_event_step)
+            header.addWidget(self.btn_inline_toggle_advanced)
+            outer.insertLayout(0, header)
+
     def eventFilter(self, obj, event):
+        if obj is getattr(self, 'inline_event_card', None) and event.type() == QEvent.Resize:
+            self._layout_inline_fields()
+            self._layout_inline_commands()
         try:
             targets = getattr(self, "_combo_autopopup_targets", {}) or {}
             combo = targets.get(id(obj))

@@ -15,6 +15,9 @@ w=HOIWindow();w.player.frame_count=120;w.player.frame_rate=15;w.player.current_f
 w._register_object_entry(1,'raw');w._register_object_entry(2,'prepared')
 w.selected_hand_label='Left_hand';w.event_draft={'Left_hand':{'noun_object_id':1},'Right_hand':{'noun_object_id':1}}
 w.events=[];w.selected_event_id=None
+w._refresh_instance_state_ui()
+assert w.inline_actions_layout.indexOf(w.btn_inline_instance_state)>=0
+assert not w.btn_inline_instance_state.isHidden()
 errors=[]
 def modal(fn):
     def invoke():
