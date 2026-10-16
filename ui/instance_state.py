@@ -103,16 +103,13 @@ class InstanceStateMixin:
             except ValueError as exc:QMessageBox.warning(dlg,'Invalid state',str(exc));return
             self._push_undo();self.object_states=updated
             if pending['new']:self._register_object_entry(obj,spec['noun_by_count']['0'])
-            hand=self.event_draft.get(self.selected_hand_label,{})
-            previous=hand.get('noun_object_id',hand.get('target_object_id'))
-            self._bind_assembly_object(hand,obj);hand.update(noun_object_id=obj,target_object_id=obj)
-            if previous!=obj:
-                self._set_hand_field_state(hand,'noun_object_id',source='manual_instance_state',value=obj,status='confirmed')
-            for event in self.events:
-                if event.get('event_id')==self.selected_event_id:
-                    event.get('hoi_data',{}).setdefault(self.selected_hand_label,{}).update(hand)
+            # Editing an instance state never rewrites event participants. A cut
+            # event can still reference the parent before the new piece exists.
             self._bump_query_state_revision();self._load_hand_draft_to_ui(self.selected_hand_label)
             self._refresh_boxes_for_frame(self._assembly_frame());self._refresh_instance_state_ui();self._checkpoint_tracking();dlg.accept()
+            if pending['new']:
+                QMessageBox.information(self,spec.get('title','Object state'),
+                    f'Created ID {obj}. Existing events keep their Object IDs. Select this new ID in Noun for events using the separated piece.')
         buttons.accepted.connect(save)
         try:dlg.exec_()
         finally:self._instance_state_dialog=False

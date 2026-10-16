@@ -43,11 +43,12 @@ w.player.current_frame=40;before=w._snapshot_state();counter=w.object_id_counter
 def cancel_new(d):d.findChild(QPushButton,'newStateInstance').click();d.reject()
 modal(cancel_new);assert w.object_id_counter==counter and w.global_object_map==before['global_object_map']
 def cut(d):d.findChild(QPushButton,'newStateInstance').click();save_count(d,0)
-modal(cut);fresh=w.event_draft['Left_hand']['noun_object_id']
-assert fresh not in original.values() and w.event_draft['Right_hand']['noun_object_id']==1
+modal(cut);fresh=(set(w.global_object_map.values())-set(original.values())).pop()
+assert w.event_draft['Left_hand']['noun_object_id']==w.event_draft['Right_hand']['noun_object_id']==1
 assert state_at(w.object_states,fresh,40)['parent_object_id']==1
 assert set(w.global_object_map.values())=={1,2,fresh}
 assert state_at(w.object_states,1,40)['count']==2
+assert w.combo_target.findData(fresh)>=0
 # An old prepared category never fabricates an exact count.
 w.event_draft['Left_hand']['noun_object_id']=2
 def unknown(d):assert d.findChild(QComboBox,'stateCount').currentData() is None;d.reject()
@@ -67,6 +68,17 @@ try:w._load_annotations_v2(bad)
 except ValueError:pass
 else:raise AssertionError('Invalid state accepted')
 assert w.object_states==before
+# A real cut event keeps its original participants and SOE when a result piece is created.
+fixture=w._build_payload_v2();fixture['verb_library']={'0':'hold'}
+fixture['hoi_events']={side:[dict(event_id='shared',start_frame=5,contact_onset_frame=8,end_frame=30,
+    verb='hold',noun_object_id=1,instrument_object_id=None,anomaly_labels=[])] for side in ('left_hand','right_hand')}
+w._load_annotations_v2(fixture)
+event=next(e for e in w.events if e['hoi_data'].get('Left_hand',{}).get('verb'))
+w._set_selected_event(event['event_id'],'Left_hand');w.player.current_frame=25
+event_before=copy.deepcopy(w.events);boxes_before=copy.deepcopy(w.raw_boxes)
+modal(cut)
+assert w.events==event_before and w.raw_boxes==boxes_before
+assert w.event_draft['Left_hand']['noun_object_id']==1
 from core.safe_storage import write_recovery,read_recovery
 import tempfile
 with tempfile.TemporaryDirectory() as temp:
