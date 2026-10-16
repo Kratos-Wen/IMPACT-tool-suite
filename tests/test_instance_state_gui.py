@@ -87,4 +87,15 @@ with tempfile.TemporaryDirectory() as temp:
     restored,_=read_recovery(path,identity)
     assert restored['state']['object_states']==snapshot['object_states']
 w._stop_autosave();w.deleteLater()
+# Different state names do not pre-create different physical instances.
+PROFILE.update(noun_classes=['raw','prepared'],create_default_noun_instances=True)
+fresh=HOIWindow()
+for _ in range(5):fresh._apply_profile_libraries()
+assert len(fresh.global_object_map)==1,fresh.global_object_map
+uid=next(iter(fresh.global_object_map.values()))
+fresh.player.frame_count=40;fresh.player.frame_rate=15
+from core.object_states import put_state,empty_states
+fresh.object_states=put_state(empty_states(),dict(frame=0,object_id=uid,kind='sample',count=2),PROFILE)
+fresh._apply_profile_libraries();assert set(fresh.global_object_map.values())=={uid}
+fresh._stop_autosave();fresh.deleteLater()
 print('INSTANCE_STATE_REAL_WINDOW_COUNTS_CUT_ID_CANCEL_UNDO_SAVE_LOAD_PASS')

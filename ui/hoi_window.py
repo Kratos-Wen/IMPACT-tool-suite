@@ -10360,6 +10360,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         try:
             for name in _PROJECT_PROFILE.get('noun_classes',[]):
                 if name=='assembly' or instance_category(name,_PROJECT_PROFILE,self.class_map.values()) in known:continue
+                if any(name in spec.get('classes',[]) and known.intersection(spec.get('classes',[]))
+                       for spec in _PROJECT_PROFILE.get('counted_object_states',{}).values()):continue
                 used=set(self.global_object_map.values())|{box.get('id') for box in self.raw_boxes if not self._is_hand_label(box.get('label'))}
                 uid=max(1,self.object_id_counter)
                 while uid in used:uid+=1
