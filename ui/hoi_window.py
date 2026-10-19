@@ -9001,6 +9001,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     "start": int(s),
                     "end": int(e),
                     "onset": int(onset) if onset is not None else int(s),
+                    "anomaly_frames": tuple(h.get("required_review_frames", [])),
                     "verb": verb,
                     "color": base_color,
                     "complete": bool(self._hand_completion_state(h, hand_key=hand_key).get('complete')),

@@ -130,6 +130,8 @@ class HOITimelineRow(BaseTimelineRow):
                     "verb": seg.get("verb") or "",
                     "color": seg.get("color"),
                     "complete": seg.get("complete"),
+                    "anomaly_frames": tuple(sorted({f for f in seg.get("anomaly_frames", ())
+                                                     if type(f) is int and s <= f <= e})),
                 }
             )
         return sorted(segs, key=lambda x: (x["start"], x.get("event_id", -1)))
@@ -186,8 +188,23 @@ class HOITimelineRow(BaseTimelineRow):
                      if seg['event_id'] == self._selected_event_id), None)
 
     def _hit_box_marker(self, x, y):
+        if self._on_box_marker and abs(y - (self.height() - 11)) <= 7:
+            segment, _ = self._hit_segment(x, y)
+            if segment:
+                candidates = [(frame, pixel) for frame, pixel in self._anomaly_marker_positions(segment)
+                              if abs(pixel - x) <= 6]
+                if candidates:
+                    frame, _ = min(candidates, key=lambda item: abs(item[0] - self.x_to_frame(x)))
+                    return {'frame': frame, 'event_id': segment['event_id'],
+                            'tooltip': f'Anomaly frame {frame}'}
         segment = self._selected_segment() if self._box_markers else None
         return self._box_markers.hit(segment, x, y) if segment else None
+
+    def _anomaly_marker_positions(self, segment):
+        start = max(segment['start'], self.get_vs())
+        end = min(segment['end'], self.get_vs() + self.get_span())
+        return [(frame, self.frame_to_x(frame)) for frame in segment['anomaly_frames']
+                if start <= frame <= end and self.get_gutter() <= self.frame_to_x(frame) < self.width()]
 
     def paintEvent(self, _e):
         p = QPainter(self)
@@ -265,6 +282,17 @@ class HOITimelineRow(BaseTimelineRow):
                 )
                 p.setBrush(QBrush(marker_color))
                 p.drawPolygon(tri)
+
+            if not self._dragging:
+                # Bottom diamonds remain distinct from the editable SOE handles.
+                for x in {pixel for _, pixel in self._anomaly_marker_positions(seg)}:
+                    y = self.height() - 11
+                    p.setPen(QPen(QColor('#7e22ce'), 1, Qt.DashLine))
+                    p.drawLine(x, rect.top() + 12, x, y - 5)
+                    p.setPen(QPen(QColor('#ffffff'), 1))
+                    p.setBrush(QColor('#7e22ce'))
+                    p.drawPolygon(QPolygon([QPoint(x, y - 5), QPoint(x + 5, y),
+                                            QPoint(x, y + 5), QPoint(x - 5, y)]))
 
         if self._preview_interval is not None:
             s, e = self._preview_interval
@@ -482,6 +510,8 @@ class HOITimelineRow(BaseTimelineRow):
             self._active_event_id = None
             self._preview_interval = None
             self._preview_onset = None
+            if 'event_id' in marker:
+                self._on_select(marker['event_id'], self.hand_key)
             self._on_box_marker(marker['frame'])
             e.accept()
             return
