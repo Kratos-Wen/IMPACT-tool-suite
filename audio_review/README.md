@@ -31,3 +31,5 @@ python audio_review/update_pages.py "/path/to/your/personal/audio"
 ```
 
 Reopen the same `review.html`. Embedded task data and resume keys are preserved; originals are backed up in the hidden `.impact-recovery` folder. Import your saved review JSON if changing browsers or computers.
+
+Missing speech: use **Add utterance** in the selected recording, type the missing text, adjust Start/End, then approve. Use **Play recording** to seek anywhere in the recording; the playhead buttons set boundaries without interrupting full-recording playback. Added utterances are marked as human additions, autosave, sort by time and support exclusion/restoration. Review JSON includes added utterances and their progress, including unfinished and excluded entries. Imports validate the task and source recording. Original ASR entries are preserved.

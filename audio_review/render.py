@@ -56,6 +56,14 @@ for _lang, _values in {
     LABELS[_lang].update(_values)
     LABELS[_lang]['instructions'] += LABELS[_lang].pop('instructionsExtra')
 
+for _lang, _values in {
+    'zh': dict(add='＋新增片段', humanAdded='人工补充片段', recordingPlay='播放整段录音', addedHelp='\nASR 漏句：点击“新增片段”，填写文字并调整起止时间，再确认通过。新增片段会自动保存，按时间排列，也能排除和恢复。\n“播放整段录音”可查找漏句；播放时可用“设为播放位置”标记起点和终点。新增片段随审核 JSON 一起导出和导入。'),
+    'en': dict(add='+ Add utterance', humanAdded='Human-added utterance', recordingPlay='Play recording', addedHelp='\nFor missing speech, click “Add utterance”, enter the text and adjust its boundaries, then approve it. Added utterances autosave, appear in time order and can be excluded or restored.\nUse “Play recording” to find missing speech. During playback, use the start/end playhead buttons to mark boundaries. Added utterances are included in review JSON exports and imports.'),
+    'de': dict(add='+ Äußerung hinzufügen', humanAdded='Manuell ergänzte Äußerung', recordingPlay='Aufnahme abspielen', addedHelp='\nFehlende Sprache: „Äußerung hinzufügen“ wählen, Text eintragen, Zeitgrenzen anpassen und bestätigen. Ergänzungen werden automatisch gespeichert, zeitlich einsortiert und können ausgeschlossen oder wiederhergestellt werden.\nMit „Aufnahme abspielen“ nach fehlender Sprache suchen. Anfang und Ende während der Wiedergabe mit den Abspielpositions-Tasten setzen. Ergänzungen werden mit der Prüfdatei exportiert und importiert.')
+}.items():
+    LABELS[_lang].update(_values)
+    LABELS[_lang]['instructions'] += LABELS[_lang].pop('addedHelp')
+
 for _labels in LABELS.values():
     _labels['import'] = _labels.pop('import_')
 

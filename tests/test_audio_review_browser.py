@@ -285,6 +285,106 @@ class AudioReviewBrowserTests(unittest.TestCase):
         self.click('play')
         self.wait.until(lambda driver: self.js("return !document.getElementById('player').paused"))
 
+    def set_field(self, name, value):
+        self.browser.execute_script("const n=document.getElementById(arguments[0]);n.value=arguments[1];n.dispatchEvent(new Event('input'))", name, value)
+
+    def import_payload(self, payload, suffix='addition'):
+        path = self.folder/(self._testMethodName+'-'+suffix+'.json')
+        path.write_text(json.dumps(payload), encoding='utf-8')
+        self.browser.find_element(By.ID,'import-file').send_keys(str(path))
+        self.wait.until(lambda driver: self.js("return document.getElementById('import-file').value === ''"))
+
+    def test_added_utterance_autosaves_without_changing_asr(self):
+        self.click('add')
+        self.assertEqual(self.js('return window.IMPACTAudioReview.data.items.length'), 3)
+        payload=self.exported();self.assertEqual(len(payload['added_items']),1)
+        item=payload['added_items'][0];self.assertIsNone(item['source_text_sha256'])
+        self.assertEqual(item['annotation_origin'],'human_added')
+        self.assertEqual(item['source_sha256'],'audio-one.wav')
+        self.assertTrue(self.browser.find_element(By.ID,'original').get_attribute('disabled'))
+        self.set_field('text','Missing speech from the operator.')
+        self.set_field('start','0.85');self.set_field('end','1.1')
+        self.assertEqual(self.exported()['items'],[])
+        self.browser.refresh();self.wait_for_page()
+        self.assertEqual(self.browser.find_element(By.ID,'text').get_attribute('value'),'Missing speech from the operator.')
+        self.assertEqual(self.exported()['added_items'][0]['review_id'],item['review_id'])
+        self.click('text-ok');self.click('time-ok')
+        accepted=self.exported()['items'];self.assertEqual(len(accepted),1)
+        self.assertEqual(accepted[0]['annotation_origin'],'human_added')
+        self.assertEqual(accepted[0]['human_start_audio_s'],.85)
+
+    def test_added_export_import_is_idempotent_and_resumable(self):
+        self.click('add');self.set_field('text','New sentence.');self.click('text-ok');self.click('time-ok')
+        payload=self.exported();self.assertEqual(len(payload['items']),1)
+        self.js('localStorage.clear();Storage.prototype.setItem=function(){}');self.browser.refresh();self.wait_for_page()
+        self.assertEqual(len(self.exported()['added_items']),0)
+        self.import_payload(payload)
+        self.assertEqual(len(self.exported()['added_items']),1)
+        self.assertEqual(len(self.exported()['items']),1)
+        self.import_payload(payload,'repeat')
+        self.assertEqual(len(self.exported()['added_items']),1)
+        self.browser.refresh();self.wait_for_page()
+        self.assertEqual(len(self.exported()['items']),1)
+        self.assertEqual(self.js('return window.IMPACTAudioReview.data.items.length'),3)
+
+    def test_added_exclusion_and_unfinished_drafts_survive_import(self):
+        self.click('add');self.set_field('text','Remove this.');self.click('text-ok');self.click('time-ok');self.click('excluded')
+        self.click('add');self.set_field('text','Not finished yet.')
+        payload=self.exported();self.assertEqual(len(payload['added_items']),2);self.assertEqual(payload['items'],[])
+        self.js('localStorage.clear();Storage.prototype.setItem=function(){}');self.browser.refresh();self.wait_for_page();self.import_payload(payload)
+        self.assertEqual(len(self.exported()['added_items']),2)
+        self.click('next')
+        self.assertTrue(self.browser.find_element(By.ID,'excluded').is_selected())
+        self.click('excluded');self.assertEqual(len(self.exported()['items']),1)
+
+    def test_added_import_rejects_wrong_source_and_does_not_touch_asr(self):
+        self.click('add');self.set_field('text','Do not assign to another recording.')
+        payload=self.exported();payload['added_items'][0]['source_sha256']='another-source'
+        self.js('localStorage.clear();Storage.prototype.setItem=function(){}');self.browser.refresh();self.wait_for_page();self.import_payload(payload)
+        self.assertEqual(self.exported()['added_items'],[])
+        self.assertEqual(self.js('return window.IMPACTAudioReview.data.items[0].original_text'),'Synthetic utterance one.')
+        self.assertEqual(self.exported()['items'],[])
+
+    def test_added_invalid_bounds_cannot_be_approved(self):
+        self.click('add');self.set_field('text','Check boundaries.')
+        for value in ('','0','8','-1'):
+            self.set_field('end',value);self.click('accept');self.assertEqual(self.exported()['items'],[])
+        payload=self.exported();self.assertEqual(len(payload['added_items']),1)
+        self.js('localStorage.clear();Storage.prototype.setItem=function(){}');self.browser.refresh();self.wait_for_page();self.import_payload(payload)
+        self.assertEqual(self.exported()['items'],[])
+
+    def test_added_navigation_and_export_sort_by_time(self):
+        self.click('text-ok');self.click('time-ok');self.click('next');self.click('text-ok');self.click('time-ok')
+        self.click('add');self.set_field('text','Between the first two sentences.')
+        self.set_field('start','.9');self.set_field('end','1.0');self.click('text-ok');self.click('time-ok')
+        rows=self.exported()['items'];self.assertEqual([x['human_start_audio_s'] for x in rows],[.35,.9,1.2])
+        self.click('previous');self.assertIn('u0',self.browser.find_element(By.ID,'position').text)
+        self.click('next')
+        self.assertEqual(self.browser.find_element(By.ID,'text').get_attribute('value'),'Between the first two sentences.')
+
+    def test_recording_playback_allows_both_playhead_boundaries(self):
+        self.click('add');self.set_field('text','Spoken during the gap.')
+        self.click('recording-play');self.wait.until(lambda driver:self.js("return !document.getElementById('player').paused"))
+        self.assertEqual(float(self.browser.find_element(By.ID,'seek').get_attribute('max')),6)
+        self.js("document.getElementById('player').currentTime=1.0")
+        self.click('set-start')
+        self.assertFalse(self.js("return document.getElementById('player').paused"))
+        self.js("document.getElementById('player').currentTime=2.5")
+        self.click('set-end')
+        self.assertFalse(self.js("return document.getElementById('player').paused"))
+        self.assertAlmostEqual(float(self.browser.find_element(By.ID,'start').get_attribute('value')),1,delta=.5)
+        self.assertAlmostEqual(float(self.browser.find_element(By.ID,'end').get_attribute('value')),2.5,delta=.5)
+        self.click('text-ok');self.click('time-ok');self.assertEqual(len(self.exported()['items']),1)
+
+    def test_add_in_recording_without_any_asr_items(self):
+        manifest=json.loads(json.dumps(self.data));manifest['items']=[];manifest['plan_hash']=self.id()
+        page=self.folder/(self._testMethodName+'-empty.html');page.write_text(renderer.render_page(manifest,'zh'),encoding='utf-8')
+        self.browser.get(page.as_uri());self.wait_for_page()
+        self.js("document.getElementById('player').muted=true")
+        self.click('add');self.set_field('text','First human utterance.');self.click('text-ok');self.click('time-ok')
+        self.assertEqual(len(self.exported()['items']),1)
+        self.assertEqual(self.js('return window.IMPACTAudioReview.data.items.length'),0)
+
     def test_approve_next_and_keyboard_and_reload_resume(self):
         from selenium.webdriver.common.keys import Keys
         self.browser.find_element(By.ID, 'text').send_keys(Keys.CONTROL, Keys.ENTER)

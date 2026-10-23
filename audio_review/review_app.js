@@ -9,7 +9,9 @@
   state.items = state.items || {}; state.files = state.files || {};
   DATA.items.forEach(item => state.items[item.review_id] = C.normalize(item,
     state.items[item.review_id] || DATA.initial_reviews?.[item.review_id], files.get(item.source_relative_path)));
-  const itemIndex = new Map(DATA.items.map((item, index) => [item.review_id, index]));
+  C.restoreAdded(DATA,state);
+  let items=C.allItems(DATA,state);
+  const itemIndex = new Map(items.map((item, index) => [item.review_id, index]));
   let current = Math.max(0, itemIndex.get(state.current_review_id) ?? 0), visible = [], clip = null;
   let timer = null, animation = null, generation = 0, activeMode = 'current';
   const player = $('player');
@@ -61,20 +63,21 @@
   document.querySelectorAll('[data-ph]').forEach(node => node.placeholder = L[node.dataset.ph] || node.dataset.ph);
   $('reviewer').value = state.reviewer;
   function persist() {
-    state.current_review_id = DATA.items[current]?.review_id;
+    state.current_review_id = items[current]?.review_id;
     try { localStorage.setItem(storageKey, JSON.stringify(state)); storageFailed = false; }
     catch (_) { storageFailed = true; }
     $('saved').textContent = storageFailed ? L.saveError : L.saved;
     $('saved').classList.toggle('error', storageFailed);
   }
-  function record() { return DATA.items[current]; }
+  function record() { return items[current]; }
   function review() { return state.items[record()?.review_id]; }
   function finishTimers() { clearTimeout(timer); timer = null; cancelAnimationFrame(animation); animation = null; }
   function stop() { generation++; finishTimers(); player.pause(); $('play').textContent = L.play; }
   function bounds(mode) {
-    const item = record(), r = review(), file = files.get(item.source_relative_path);
-    let start = mode === 'current' ? C.number(r.human_start_audio_s) : C.number(item.original_start_audio_s);
-    let end = mode === 'current' ? C.number(r.human_end_audio_s) : C.number(item.original_end_audio_s);
+    const item = record(), r = review(), file = files.get(item?.source_relative_path || $('recording').value);
+    if (mode === 'recording') return {start:0,end:file?.duration_seconds,duration:file?.duration_seconds,path:file?.audio_file};
+    let start = (mode === 'current' || item.annotation_origin==='human_added') ? C.number(r.human_start_audio_s) : C.number(item.original_start_audio_s);
+    let end = (mode === 'current' || item.annotation_origin==='human_added') ? C.number(r.human_end_audio_s) : C.number(item.original_end_audio_s);
     if (mode === 'context') { start = Math.max(0, start - 2); end = Math.min(file.duration_seconds, end + 2); }
     return {start, end, duration: file.duration_seconds, path: item.audio_file || file.audio_file};
   }
@@ -117,7 +120,7 @@
     clip = value; activeMode = mode;
     $('seek').max = value.end - value.start; $('seek').value = 0;
     $('elapsed').textContent = format(0); $('clip-duration').textContent = format(value.end - value.start);
-    $('play-mode').textContent = mode === 'original' ? L.original : mode === 'context' ? L.context : L.current;
+    $('play-mode').textContent = mode === 'recording' ? L.recordingPlay : mode === 'original' ? L.original : mode === 'context' ? L.context : L.current;
     let url;
     try { url = playbackURL(value.path); }
     catch (_) { $('audio-status').textContent = L.boostSelect; return; }
@@ -154,25 +157,31 @@
   }
   function refreshList() {
     const path = $('recording').value, search = $('search').value.toLowerCase().trim();
-    visible = DATA.items.map((item, index) => ({item, index})).filter(({item}) => {
+    visible = items.map((item, index) => ({item, index})).filter(({item}) => {
       const r = state.items[item.review_id];
       return item.source_relative_path === path
         && (!search || (item.original_text + ' ' + r.human_text + ' ' + item.source_relative_path).toLowerCase().includes(search))
         && ($('filter').value !== 'pending' || (!r.excluded && !C.accepted(r, item, files.get(path))));
     }).map(({index}) => index);
     if (!visible.includes(current)) current = visible[0] ?? -1;
-    render();
+    sortVisible(); render();
+  }
+  function sortVisible() {
+    visible.sort((a,b)=>(C.number(state.items[items[a].review_id].human_start_audio_s)||0)-(C.number(state.items[items[b].review_id].human_start_audio_s)||0) || a-b);
   }
   function progress() {
     let approved = 0, excluded = 0;
-    DATA.items.forEach(item => { const r = state.items[item.review_id];
+    items.forEach(item => { const r = state.items[item.review_id];
       if (r.excluded) excluded++; else if (C.accepted(r, item, files.get(item.source_relative_path))) approved++; });
-    $('progress').textContent = `${L.accepted} ${approved} / ${DATA.items.length} · ${L.excluded} ${excluded}`;
+    $('progress').textContent = `${L.accepted} ${approved} / ${items.length} · ${L.excluded} ${excluded}`;
     const r = review(), item = record();
     $('state').textContent = !r ? '' : r.excluded ? L.excluded
       : C.accepted(r, item, files.get(item.source_relative_path)) ? L.accepted : L.pendingState;
     $('text-ok').checked = r?.text_checked || false; $('time-ok').checked = r?.timing_checked || false;
     $('accept').disabled = !r || r.excluded;
+    sortVisible();const position=visible.indexOf(current);
+    $('position').textContent = item ? `${position+1} / ${visible.length} · ${item.annotation_origin==='human_added' ? L.humanAdded : item.review_id}` : L.noItems;
+    $('previous').disabled=position<=0; $('next').disabled=position<0||position>=visible.length-1;
   }
   function render() {
     stop(); clip = null; $('validation').textContent = ''; $('audio-status').textContent = '';
@@ -182,6 +191,9 @@
     $('text').value = r?.human_text ?? ''; $('start').value = displayTime(r?.human_start_audio_s);
     $('end').value = displayTime(r?.human_end_audio_s); $('notes').value = r?.notes ?? '';
     $('excluded').checked = r?.excluded || false;
+    $('original').disabled=!item || item.annotation_origin==='human_added';
+    $('add').disabled=!files.has($('recording').value);
+    $('recording-play').disabled=!files.has($('recording').value);
     const position = visible.indexOf(current);
     $('position').textContent = item ? `${position + 1} / ${visible.length} · ${item.review_id}` : L.noItems;
     $('previous').disabled = position <= 0; $('next').disabled = position < 0 || position >= visible.length - 1;
@@ -214,7 +226,9 @@
     r[field] = value;
     if (field === 'human_text') r.text_checked = false;
     if (field === 'human_start_audio_s' || field === 'human_end_audio_s') {
-      r.timing_checked = false; stop(); clip = null;
+      r.timing_checked = false;
+      if (activeMode==='recording' && clip) { $('validation').textContent='';persist();progress();return; }
+      stop(); clip = null;
       const value = bounds('current'); $('seek').value = 0; $('elapsed').textContent = format(0);
       $('clip-duration').textContent = validClip(value) ? format(value.end - value.start) : '—';
     }
@@ -241,6 +255,24 @@
       const resume = clip && activeMode === 'current' && player.currentTime >= clip.start && player.currentTime < clip.end - .02 ? player.currentTime : null;
       playClip('current', resume);
     }
+  };
+  $('recording-play').onclick = () => {
+    if (activeMode==='recording' && !player.paused) stop();
+    else playClip('recording', Number.isFinite(C.number(review()?.human_start_audio_s)) ? C.number(review().human_start_audio_s) : 0);
+  };
+  $('add').onclick = () => {
+    const path=$('recording').value,file=files.get(path),duration=C.number(file?.duration_seconds);
+    if (!(duration>0)) { $('validation').textContent=L.invalidTime;return; }
+    let start=clip && record()?.source_relative_path===path ? player.currentTime : C.number(review()?.human_end_audio_s);
+    if (!Number.isFinite(start)) start=0;
+    start=Math.max(0,Math.min(start,Math.max(0,duration-0.01)));
+    let end=Math.min(duration,start+2);
+    const next=items.map(i=>state.items[i.review_id]).filter((r,index)=>items[index].source_relative_path===path && !r.excluded).map(r=>C.number(r.human_start_audio_s)).filter(t=>t>start+.01).sort((a,b)=>a-b)[0];
+    if (next!=null) end=Math.min(end,next);
+    const bytes=crypto.getRandomValues(new Uint8Array(16));
+    const id='human-'+Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
+    try { C.addItem(DATA,state,path,start,end,id);items=C.allItems(DATA,state);current=items.findIndex(i=>i.review_id===id);$('search').value='';refreshList();$('text').focus(); }
+    catch (_) { $('validation').textContent=L.invalidTime; }
   };
   $('original').onclick = () => playClip('original'); $('context').onclick = () => playClip('context');
   $('seek').oninput = () => {
@@ -273,7 +305,7 @@
   $('close-details').onclick = () => $('details').close();
   $('evidence').onclick = () => {
     const item = record();
-    const parts = [`${L.originalText}\n${item.original_text}`, `ASR: ${item.original_start_audio_s} – ${item.original_end_audio_s} s`];
+    const parts = item.annotation_origin==='human_added' ? [L.humanAdded] : [`${L.originalText}\n${item.original_text}`, `ASR: ${item.original_start_audio_s} – ${item.original_end_audio_s} s`];
     for (const key of ['offline_review_context', 'machine_text_clip_with_context', 'alternate_machine_text', 'literal_time_proposal', 'machine_word_times_display'])
       if (item[key]) parts.push(`${key}\n${typeof item[key] === 'string' ? item[key] : JSON.stringify(item[key], null, 2)}`);
     const fileNotes = state.files[item.source_relative_path]?.notes;
@@ -295,7 +327,7 @@
     const file = event.target.files[0]; if (!file) return;
     try {
       const result = C.importReview(DATA, state, JSON.parse(await file.text()));
-      $('reviewer').value = state.reviewer; persist(); refreshList();
+      items=C.allItems(DATA,state);$('reviewer').value = state.reviewer; persist(); refreshList();
       $('audio-status').textContent = L.imported.replace('{n}', result.imported).replace('{s}', result.skipped);
     } catch (_) { $('audio-status').textContent = L.importError; }
     event.target.value = '';
