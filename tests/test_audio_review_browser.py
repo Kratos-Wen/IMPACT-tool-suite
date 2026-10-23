@@ -259,7 +259,7 @@ class AudioReviewBrowserTests(unittest.TestCase):
         self.assertEqual(self.js('return window.IMPACTAudioReview.data.items[0].original_start_audio_s'), .35)
         self.assertEqual(self.exported()['items'], [])
         self.click('play')
-        self.js("const r=document.getElementById('recording');r.value='two.wav';r.dispatchEvent(new Event('change'))")
+        self.js("const r=document.getElementById('recording');r.value='two.wav';r.dispatchEvent(new Event('change'));const e=document.getElementById('end');e.value='5.5';e.dispatchEvent(new Event('input'))")
         self.click('play')
         self.wait.until(lambda driver: self.js("return !document.getElementById('player').paused"))
         self.assertTrue(self.js("return document.getElementById('player').src.startsWith('blob:')"))
