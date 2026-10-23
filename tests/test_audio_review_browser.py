@@ -59,6 +59,7 @@ class AudioReviewBrowserTests(unittest.TestCase):
                 options.binary_location = os.environ['IMPACT_FIREFOX_BINARY']
             options.set_preference('media.autoplay.default', 0)
             options.set_preference('media.autoplay.blocking_policy', 0)
+            options.set_preference('media.autoplay.block-webaudio', False)
             service = FirefoxService(executable_path=os.environ['IMPACT_GECKODRIVER']) if os.environ.get('IMPACT_GECKODRIVER') else FirefoxService()
             cls.browser = webdriver.Firefox(options=options, service=service)
         cls.browser.set_window_size(1366, 768)
@@ -221,11 +222,68 @@ class AudioReviewBrowserTests(unittest.TestCase):
     def test_no_page_scrolling_and_controls_visible_in_three_languages(self):
         for language in ('zh', 'en', 'de'):
             self.browser.get((self.folder / (language + '.html')).as_uri())
-            for width, height in ((1366, 768), (1280, 720), (1024, 650)):
+            for width, height in ((1366, 768), (1280, 720), (1024, 650), (1024, 600)):
                 self.browser.set_window_size(width, height)
                 self.assertTrue(self.js('return document.documentElement.scrollHeight <= innerHeight+1'))
                 self.assertTrue(self.js('return ["seek","text-ok","time-ok","accept"].every(id=>{let r=document.getElementById(id).getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;})'))
         self.browser.set_window_size(1366, 768)
+
+    def test_boost_local_audio_is_audible_and_does_not_change_review(self):
+        self.js("""
+          const proto=(window.AudioContext||window.webkitAudioContext).prototype;
+          const original=proto.createGain;
+          proto.createGain=function(){const node=original.call(this);window.testGain=node;
+            window.testAnalyser=this.createAnalyser();node.connect(window.testAnalyser);return node;};
+          document.getElementById('player').muted=false;
+          const end=document.getElementById('end');end.value='4.8';end.dispatchEvent(new Event('input'));
+        """)
+        # Marionette cannot upload a directory. Exercise the same FileList handler
+        # using the two files the directory picker supplies in an interactive browser.
+        self.js("document.getElementById('audio-folder-files').removeAttribute('webkitdirectory')")
+        self.browser.find_element(By.ID, 'audio-folder-files').send_keys(str(self.folder/'one.wav')+'\n'+str(self.folder/'two.wav'))
+        self.js("const g=document.getElementById('gain');g.value='4';g.dispatchEvent(new Event('input'))")
+        self.click('play')
+        try:
+            self.wait.until(lambda driver: self.js("return !document.getElementById('player').paused && !!window.testGain"))
+        except Exception:
+            print('BOOST_DIAGNOSTIC', self.js("return {status:document.getElementById('audio-status').textContent,src:document.getElementById('player').src,error:document.getElementById('player').dataset.playbackError,files:Array.from(document.getElementById('audio-folder-files').files).map(f=>f.name),gain:!!window.testGain,context:window.testGain?.context.state}"))
+            raise
+        self.assertEqual(self.js('return window.testGain.gain.value'), 4)
+        def rms():
+            return self.js("const a=new Float32Array(window.testAnalyser.fftSize);window.testAnalyser.getFloatTimeDomainData(a);return Math.sqrt(a.reduce((n,v)=>n+v*v,0)/a.length)")
+        self.wait.until(lambda driver: rms() > .03)
+        boosted = rms()
+        self.js("const g=document.getElementById('gain');g.value='1';g.dispatchEvent(new Event('input'))")
+        time.sleep(.25)
+        self.assertGreater(boosted, rms()*2)
+        self.assertEqual(self.js('return window.IMPACTAudioReview.data.items[0].original_start_audio_s'), .35)
+        self.assertEqual(self.exported()['items'], [])
+        self.click('play')
+        self.js("const r=document.getElementById('recording');r.value='two.wav';r.dispatchEvent(new Event('change'))")
+        self.click('play')
+        self.wait.until(lambda driver: self.js("return !document.getElementById('player').paused"))
+        self.assertTrue(self.js("return document.getElementById('player').src.startsWith('blob:')"))
+
+    def test_update_downloaded_page_preserves_task_and_saved_review(self):
+        import subprocess, sys
+        self.click('text-ok'); self.click('time-ok')
+        page = self.folder / (self._testMethodName + '.html')
+        before = page.read_text(encoding='utf-8')
+        page.write_text(before.replace('IMPACT Audio Review', 'Old audio page', 1), encoding='utf-8')
+        subprocess.run([sys.executable, str(ROOT/'audio_review/update_pages.py'), str(page)], check=True, capture_output=True)
+        self.browser.refresh()
+        self.wait_for_page()
+        self.assertEqual(len(self.exported()['items']), 1)
+        self.assertEqual(self.js('return window.IMPACTAudioReview.data.plan_hash'), self.id())
+        self.assertTrue(list((self.folder/'.impact-recovery').glob('review-*.html')))
+
+    def test_boost_without_folder_keeps_native_playback_available(self):
+        self.js("const g=document.getElementById('gain');g.value='4';g.dispatchEvent(new Event('input'))")
+        self.click('play')
+        self.assertTrue(self.browser.find_element(By.ID,'audio-status').text)
+        self.js("const g=document.getElementById('gain');g.value='1';g.dispatchEvent(new Event('input'))")
+        self.click('play')
+        self.wait.until(lambda driver: self.js("return !document.getElementById('player').paused"))
 
     def test_approve_next_and_keyboard_and_reload_resume(self):
         from selenium.webdriver.common.keys import Keys

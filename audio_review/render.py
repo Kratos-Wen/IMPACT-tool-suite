@@ -48,6 +48,14 @@ LABELS = {
         saveBlocked='Prüfdatei konnte nicht gespeichert werden. Bitte erneut versuchen.', finished='Letzte Äußerung erreicht.', originalText='Original-ASR-Text',
         instructions='Jede Äußerung anhören und Text sowie Zeitgrenzen prüfen. Korrektes abhaken; Fehler bearbeiten und danach abhaken.\n„Bestätigen & weiter“ bestätigt Text und Zeitgrenzen. Sprache anderer Personen als der ausführenden Person ausschließen.\nAnfang und Ende sind aus ASR ausgefüllt, in Sekunden der Originalaufnahme. Die Wiedergabe endet am Satzende. Mit „±2 Sekunden“ die Grenzen prüfen.\nTextänderungen setzen die Textbestätigung zurück; Zeitänderungen setzen die Zeitbestätigung zurück.\nÄnderungen werden in diesem Browser gespeichert. Am Sitzungsende eine Prüfdatei speichern: Sie enthält das bestätigte Transkript und den gesamten Prüfstand für den erneuten Import.\nLeertaste: Wiedergabe/Pause; Alt+←/→: zurück/weiter; Strg/⌘+Enter: bestätigen & weiter.')
 }
+for _lang, _values in {
+    'zh': dict(gain='音量增益', audioFolder='启用增益：选择 audio 文件夹', boostSelect='请先选择配套 audio 文件夹，再使用增益。', boostReady='增益已就绪，仅影响此工具。', originalClock='原音频位置', exclude='删除／排除该句（可撤销）', instructionsExtra='\n删除片段：勾选“删除／排除该句”。该句不进入正式转写；取消勾选即可恢复。\n音量太低：点击“启用增益”，选择配套 audio 文件夹，然后调高增益。只提高本工具的音量，无需调高电脑总音量。'),
+    'en': dict(gain='Audio boost', audioFolder='Enable boost: select audio folder', boostSelect='Select the accompanying audio folder to enable boost.', boostReady='Boost ready. Only this tool is affected.', originalClock='Recording position', exclude='Delete / exclude utterance (undoable)', instructionsExtra='\nDelete a segment by ticking “Delete / exclude utterance”. It is omitted from the final transcript; untick to restore it.\nFor quiet audio, enable boost by selecting the accompanying audio folder, then increase Audio boost. This does not change the computer volume.'),
+    'de': dict(gain='Verstärkung', audioFolder='Verstärkung: audio-Ordner wählen', boostSelect='Zum Verstärken zuerst den zugehörigen audio-Ordner wählen.', boostReady='Verstärkung bereit. Gilt nur für dieses Werkzeug.', originalClock='Aufnahmeposition', exclude='Äußerung löschen / ausschließen (rückgängig)', instructionsExtra='\nEine Äußerung mit „löschen / ausschließen“ aus dem fertigen Transkript entfernen. Zum Wiederherstellen das Häkchen entfernen.\nBei leiser Aufnahme den audio-Ordner wählen und die Verstärkung erhöhen. Die Systemlautstärke bleibt unverändert.')
+}.items():
+    LABELS[_lang].update(_values)
+    LABELS[_lang]['instructions'] += LABELS[_lang].pop('instructionsExtra')
+
 for _labels in LABELS.values():
     _labels['import'] = _labels.pop('import_')
 

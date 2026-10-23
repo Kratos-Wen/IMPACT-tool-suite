@@ -17,7 +17,10 @@
 <button id="context" data-t="context"></button><label><span data-t="speed"></span>
 <select id="rate"><option>0.75</option><option selected>1</option><option>1.25</option><option>1.5</option></select></label>
 <span id="play-mode"></span></div>
+<div class="boost-row"><button id="audio-folder" data-t="audioFolder"></button><input id="audio-folder-files" type="file" webkitdirectory multiple hidden>
+<label for="gain" data-t="gain"></label><input id="gain" type="range" min="1" max="8" step="0.5" value="1"><output id="gain-value">1×</output></div>
 <div class="seek-row"><span id="elapsed">0:00</span><input id="seek" type="range" min="0" max="1" value="0" step="0.001" aria-label="Utterance position"><span id="clip-duration">0:00</span></div>
+<div class="absolute-clock"><span data-t="originalClock"></span>: <span id="absolute-time">0:00</span></div>
 <div id="audio-status" role="status"></div><audio id="player" preload="metadata"></audio></section>
 <section class="utterance"><div class="utterance-heading"><strong id="position"></strong><span id="state"></span>
 <button id="evidence" data-t="evidence"></button></div>

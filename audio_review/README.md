@@ -19,3 +19,15 @@ python audio_review/render.py manifest.json review.html --ui-language en
 The manifest contains `language`, `plan_hash`, `files` and `items`. Each file supplies `source_relative_path`, `source_sha256`, `duration_seconds` and `audio_file`. Each utterance supplies `review_id`, `utterance_id`, `source_relative_path`, `source_text_sha256`, `original_text`, `original_start_audio_s`, `original_end_audio_s` and `audio_file`. Optional `initial_reviews` is indexed by `review_id`. Interface languages are `en`, `zh` and `de`.
 
 Run real-browser checks with `python -m pip install selenium`, then `python -m unittest discover -s tests -p test_audio_review_browser.py -v`. Firefox is the default; set `IMPACT_AUDIO_BROWSER=chrome` for Chrome. The tests generate synthetic audio and transcripts.
+
+Quiet recordings: click **Enable boost**, select the accompanying `audio` folder once, and raise **Audio boost** (1×–8×). This changes only this page's audio; keep the system volume at a comfortable level. The folder stays on your computer. Selection grants browser permission to route local audio through gain and compression without file-origin restrictions. Re-select the folder after reopening the page. Source recordings and transcript timestamps are unchanged.
+
+Replace your existing `review.html` with the updated page in the same location. Export a review JSON first; existing JSON exports can be imported into the new page. Updating the desktop code alone does not update a downloaded, self-contained audio page.
+
+To update already downloaded pages after pulling this repository, export your current review JSON, close the page, and run:
+
+```bash
+python audio_review/update_pages.py "/path/to/your/personal/audio"
+```
+
+Reopen the same `review.html`. Embedded task data and resume keys are preserved; originals are backed up in the hidden `.impact-recovery` folder. Import your saved review JSON if changing browsers or computers.

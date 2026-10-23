@@ -13,6 +13,50 @@
   let current = Math.max(0, itemIndex.get(state.current_review_id) ?? 0), visible = [], clip = null;
   let timer = null, animation = null, generation = 0, activeMode = 'current';
   const player = $('player');
+  let audioContext = null, boostNode = null, compressor = null;
+  const localAudio = new Map(), blobURLs = new Map();
+  function localName(path) { return decodeURIComponent(path.split('/').pop()); }
+  function playbackURL(path) {
+    const name = localName(path), file = localAudio.get(name);
+    if (audioContext || Number($('gain').value) > 1) {
+      if (!file) throw new Error('boost-folder');
+      if (!blobURLs.has(name)) blobURLs.set(name, URL.createObjectURL(file));
+      return blobURLs.get(name);
+    }
+    return new URL(path, window.location.href).href;
+  }
+  async function prepareBoost() {
+    if (Number($('gain').value) <= 1 && !audioContext) return;
+    if (!audioContext) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) throw new Error('boost-folder');
+      audioContext = new AudioCtx();
+      const source = audioContext.createMediaElementSource(player);
+      boostNode = audioContext.createGain(); compressor = audioContext.createDynamicsCompressor();
+      compressor.threshold.value = -6; compressor.knee.value = 12; compressor.ratio.value = 12;
+      compressor.attack.value = 0.003; compressor.release.value = 0.15;
+      source.connect(boostNode); boostNode.connect(compressor); compressor.connect(audioContext.destination);
+    }
+    boostNode.gain.value = Number($('gain').value);
+    await audioContext.resume();
+  }
+  $('audio-folder').onclick = () => $('audio-folder-files').click();
+  $('audio-folder-files').onchange = event => {
+    stop();
+    const duplicates = new Set(); localAudio.clear();
+    for (const file of event.target.files) {
+      if (!/\.(wav|mp3|m4a|ogg|flac|aac|opus|mp4)$/i.test(file.name)) continue;
+      if (localAudio.has(file.name)) duplicates.add(file.name); else localAudio.set(file.name, file);
+    }
+    for (const name of duplicates) localAudio.delete(name);
+    for (const url of blobURLs.values()) URL.revokeObjectURL(url); blobURLs.clear();
+    $('audio-status').textContent = L.boostReady;
+  };
+  $('gain').oninput = () => {
+    $('gain-value').textContent = $('gain').value + '×';
+    if (boostNode) boostNode.gain.setTargetAtTime(Number($('gain').value), audioContext.currentTime, .03);
+    else if (Number($('gain').value) > 1) { stop(); $('audio-status').textContent = L.boostSelect; }
+  };
   document.querySelectorAll('[data-t]').forEach(node => node.textContent = L[node.dataset.t] || node.dataset.t);
   document.querySelectorAll('[data-ph]').forEach(node => node.placeholder = L[node.dataset.ph] || node.dataset.ph);
   $('reviewer').value = state.reviewer;
@@ -43,6 +87,7 @@
     return Math.floor(seconds / 60) + ':' + (seconds % 60).toFixed(2).padStart(5, '0');
   };
   function drawSeek() {
+    $('absolute-time').textContent = format(player.currentTime);
     if (!clip) return;
     const duration = clip.end - clip.start;
     const offset = Math.max(0, Math.min(duration, player.currentTime - clip.start));
@@ -73,7 +118,9 @@
     $('seek').max = value.end - value.start; $('seek').value = 0;
     $('elapsed').textContent = format(0); $('clip-duration').textContent = format(value.end - value.start);
     $('play-mode').textContent = mode === 'original' ? L.original : mode === 'context' ? L.context : L.current;
-    const url = new URL(value.path, window.location.href).href;
+    let url;
+    try { url = playbackURL(value.path); }
+    catch (_) { $('audio-status').textContent = L.boostSelect; return; }
     const base = player.src.split('#')[0];
     // Native media fragments bound playback even if the page is backgrounded.
     if (base !== url || player.dataset.fragment !== `${value.start},${value.end}`) {
@@ -83,6 +130,8 @@
     }
     const position = offset == null ? value.start : Math.max(value.start, Math.min(value.end, offset));
     try {
+      // Resume Web Audio during the play-button gesture, before metadata awaits.
+      const readyForBoost = prepareBoost();
       if (player.readyState < 1) await new Promise((resolve, reject) => {
         let timeout;
         const cleanup = () => { clearTimeout(timeout); player.removeEventListener('loadedmetadata', loaded); player.removeEventListener('error', failed); };
@@ -93,6 +142,7 @@
       if (token !== generation) return;
       if (value.end > player.duration + 0.001) throw new Error('duration');
       player.currentTime = position; player.playbackRate = Number($('rate').value);
+      await readyForBoost;
       await player.play();
       if (token !== generation) return;
       $('audio-status').textContent = ''; $('play').textContent = L.pause;
@@ -140,6 +190,7 @@
       $('seek').max = validClip(value) ? value.end - value.start : 1; $('seek').value = 0;
       $('elapsed').textContent = format(0); $('clip-duration').textContent = validClip(value) ? format(value.end - value.start) : '—';
       $('play-mode').textContent = L.current;
+      $('absolute-time').textContent = validClip(value) ? format(value.start) : '—';
     }
     progress(); persist();
   }
