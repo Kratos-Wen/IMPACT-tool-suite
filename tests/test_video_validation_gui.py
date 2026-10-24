@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 os.environ['QT_QPA_PLATFORM']='offscreen'
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from app import _bootstrap_qt_runtime
+from app import _bootstrap_qt_runtime, _configure_app_font
 _bootstrap_qt_runtime()
 import numpy as np
 from PyQt5.QtCore import Qt,QPoint
@@ -16,7 +16,7 @@ PROFILE.clear();PROFILE.update(verbs=['hold'],noun_classes=['part','tool','assem
 from ui.hoi_window import HOIWindow
 from core.frame_review import signature
 
-app=QApplication([])
+app=QApplication([]);_configure_app_font(app)
 for name in ('information','warning','question','critical'):setattr(QMessageBox,name,lambda *a,**k:QMessageBox.No)
 
 class Capture:
@@ -48,6 +48,7 @@ assert not original['video_validation']
 w.validator_name='Fixture reviewer'
 w.btn_validation.setChecked(True)
 assert w.video_validation['status']=='in_progress'
+w._set_experiment_mode_key('manual');w._set_advanced_inspector_visible(False);w.onboarding_banner.hide()
 w.resize(1000,800);w.show()
 for _ in range(4):app.processEvents()
 assert w.btn_mark_validated.isVisible()
