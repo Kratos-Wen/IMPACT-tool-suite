@@ -11,6 +11,8 @@ SHORTCUT_DEFINITIONS: List[Dict[str, str]] = [
     {"id":"hoi.jump_end","section":"IMPACT HOI","scope":"hoi","label":"Jump to End","default":"Alt+3"},
     {"id":"hoi.prev_keyframe","section":"IMPACT HOI","scope":"hoi","label":"Previous event keyframe","default":"Alt+Left"},
     {"id":"hoi.next_keyframe","section":"IMPACT HOI","scope":"hoi","label":"Next event keyframe","default":"Alt+Right"},
+    {"id":"hoi.copy_frame_boxes","section":"IMPACT HOI","scope":"hoi","label":"Copy event boxes at current frame","default":"Ctrl+Shift+C"},
+    {"id":"hoi.paste_frame_boxes","section":"IMPACT HOI","scope":"hoi","label":"Paste event boxes at current frame","default":"Ctrl+Shift+V"},
     {"id":"hoi.verify_frame","section":"IMPACT HOI","scope":"hoi","label":"Verify visible boxes","default":"Ctrl+Return"},
     {"id":"hoi.next_review_frame","section":"IMPACT HOI","scope":"hoi","label":"Next frame needing review","default":"Alt+N"},
     {"id":"hoi.prev_review_frame","section":"IMPACT HOI","scope":"hoi","label":"Previous frame needing review","default":"Alt+P"},

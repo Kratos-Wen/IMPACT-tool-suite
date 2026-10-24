@@ -63,6 +63,9 @@ jobs:
       - run: python tests/test_noun_constraints.py
       - run: python tests/test_keyframe_workflow_gui.py
       - run: python tests/test_box_import.py
+      - run: python tests/test_reviewed_import_guards_gui.py
+      - run: python tests/test_annotation_refs.py
+      - run: python tests/test_frame_copy_gui.py
       - run: python tests/test_video_validation_gui.py
       - run: python tests/test_reviewer_notes_gui.py
       - run: python tests/test_bbox_navigation_gui.py

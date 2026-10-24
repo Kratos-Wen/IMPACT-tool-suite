@@ -10469,7 +10469,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._checkpoint_tracking()
         return True
 
-    def _apply_profile_libraries(self):
+    def _apply_profile_libraries(self, create_instances=None):
+        if create_instances is None and getattr(self, '_loaded_reviewed_registry', False):
+            create_instances = False
         existing={label.name for label in self.verbs}
         added=False
         for name in _PROJECT_PROFILE.get('verbs',[]):
@@ -10479,7 +10481,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 existing.add(name);added=True
         if added:
             self._update_verb_combo();self.label_panel.refresh()
-        if not _PROJECT_PROFILE.get('create_default_noun_instances',True):
+        if create_instances is False or not _PROJECT_PROFILE.get('create_default_noun_instances',True):
             self._rebuild_object_combos(self.combo_target.currentData(),self.combo_instrument.currentData())
             return
         from core.instance_category import instance_category
@@ -12799,6 +12801,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._flush_live_operation_logs(warn_user=False)
 
         self._annotation_provenance = {}
+        self._loaded_reviewed_registry = False
         self.video_validation = {}
         self.frame_review = {}
         self.shared_assembly = empty_timeline()
@@ -13616,6 +13619,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         """Capture a deep copy of event + bbox state for undo/redo."""
         from core.editor_snapshot import clone_boxes
         return {
+            "loaded_reviewed_registry": bool(getattr(self,"_loaded_reviewed_registry",False)),
             "video_validation": copy.deepcopy(getattr(self,"video_validation",{})),
             "frame_review": copy.deepcopy(getattr(self,"frame_review",{})),
             "shared_assembly": copy.deepcopy(self._assembly_data()),
@@ -13649,6 +13653,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _restore_state(self, state: dict):
         """Restore a snapshot created by _snapshot_state."""
+        self._loaded_reviewed_registry = bool(state.get("loaded_reviewed_registry",False))
         self.video_validation = copy.deepcopy(state.get("video_validation", {}))
         self._refresh_video_validation_status()
         self.object_states = validate_states(state.get("object_states",empty_states()),_PROJECT_PROFILE)
@@ -18331,7 +18336,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             archive = archive_source(annotation_path)
         data = adapt_annotation(data, _PROJECT_PROFILE)
         from core.local_instances import localize_instances
-        data = localize_instances(data, _PROJECT_PROFILE)
+        preserve_reviewed_ids = bool((annotation_path and os.path.basename(annotation_path).lower().startswith('reviewed')) or data.get('provenance',{}).get('human_edits_present'))
+        data = localize_instances(data, _PROJECT_PROFILE, preserve_ids=preserve_reviewed_ids)
         self._unassigned_hand_candidates = copy.deepcopy(data.get("unassigned_hand_candidates", {}))
         self._annotation_trial_id = str(data.get('video_id') or '')
         self._annotation_provenance = copy.deepcopy(data.get('provenance', {}))
@@ -18365,6 +18371,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._restore_editor_view(data['editor_view'])
         # Reset state
         from core.video_validation import checked_record
+        self._loaded_reviewed_registry = preserve_reviewed_ids
         self.video_validation = checked_record(data.get("video_validation", {}), data)
         self.object_states = object_states
         self.frame_review = copy.deepcopy(data.get("frame_review",{}))
@@ -18559,6 +18566,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 if data.get('provenance',{}).get('machine_only'):import_context['automatic']=True
                 if not import_box(entry,is_actor,automatic_import_mode,import_context):continue
                 new_rb = {
+                    **{key:copy.deepcopy(entry[key]) for key in ('copied_from_frame','copied_from_source') if key in entry},
                     "id": bid,
                     "orig_frame": f_idx - self.start_offset,
                     "label": label,
@@ -18609,23 +18617,9 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                         return uid
                 return None
 
-            target_tid = links.get("target_track_id")
-            target_id = event.get("noun_object_id", event.get("target_object_id"))
-            if target_id is None:target_id = track_obj_id.get(target_tid)
-            if target_id is None:
-                target_id = _object_id_for_label(
-                    interaction.get("target") or interaction.get("noun")
-                )
-            target_id = _safe_int(target_id, None)
-
-            instrument_tid = links.get("tool_track_id") or links.get("instrument_track_id")
-            instrument_id = event.get("instrument_object_id", event.get("tool_object_id"))
-            if instrument_id is None:instrument_id = track_obj_id.get(instrument_tid)
-            if instrument_id is None:
-                instrument_id = _object_id_for_label(
-                    interaction.get("instrument") or interaction.get("tool")
-                )
-            instrument_id = _safe_int(instrument_id, None)
+            from core.annotation_refs import instance_reference
+            target_id = instance_reference(event,'object',track_obj_id,_object_id_for_label)
+            instrument_id = instance_reference(event,'instrument',track_obj_id,_object_id_for_label)
 
             anomaly_label = self._remember_anomaly_label(display_value(event, _PROJECT_PROFILE))
 
@@ -18709,7 +18703,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self.verbs.extend(fallback_verbs)
             self._update_verb_combo()
             self.label_panel.refresh()
-        self._apply_profile_libraries()
+        self._apply_profile_libraries(create_instances=not preserve_reviewed_ids)
         self._refresh_anomaly_combos(_DEFAULT_ANOMALY_LABEL)
         self._ensure_verbs_cover_events()
         self._refresh_events()
@@ -19148,6 +19142,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             for rb in self.raw_boxes:
                 if rb.get("label") == label:
                     entry = {
+                        **{key:copy.deepcopy(rb[key]) for key in ('copied_from_frame','copied_from_source') if key in rb},
                         "frame": int(rb["orig_frame"]) + int(self.start_offset),
                         "bbox": [rb["x1"], rb["y1"], rb["x2"], rb["y2"]],
                         "human_verified": bool(rb.get("human_verified",False)),
@@ -19197,6 +19192,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             for rb in self.raw_boxes:
                 if rb.get("id") == uid and not self._normalize_hand_label(rb.get("label")):
                     ent = {
+                        **{key:copy.deepcopy(rb[key]) for key in ('copied_from_frame','copied_from_source') if key in rb},
                         "frame": int(rb["orig_frame"]) + int(self.start_offset),
                         "bbox": [rb["x1"], rb["y1"], rb["x2"], rb["y2"]],
                         "human_verified": bool(rb.get("human_verified",False)),

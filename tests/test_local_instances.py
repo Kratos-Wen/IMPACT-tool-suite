@@ -61,3 +61,14 @@ assert not any(info['category'] in ('hand','left_hand','right_hand') for info in
 assert set(hands_out['unassigned_hand_candidates']['object_library'])=={str(uid) for uid in range(50,95)}
 assert hands_out['tracks']['T_LEFT_HAND']==source['tracks']['T_LEFT_HAND']
 assert localize_instances(hands_out,{**profile,'compact_import_ids':True})==hands_out
+
+# Human review packages keep their physical IDs, even when sparse or starting at zero.
+reviewed=copy.deepcopy(source)
+reviewed['object_library']['0']={'label':'part','category':'part'}
+reviewed['hoi_events']['left_hand'][0]['noun_object_id']=0
+preserved=localize_instances(reviewed,{**profile,'compact_import_ids':True},preserve_ids=True)
+assert set(preserved['object_library'])==set(reviewed['object_library'])
+assert preserved['hoi_events']['left_hand'][0]['noun_object_id']==0
+assert preserved['provenance']['video_local_instances']['original_to_local']['99999']==99999
+assert localize_instances(preserved,profile,preserve_ids=True)==preserved
+print('REVIEWED_ZERO_SPARSE_LARGE_IDS_NEVER_RENUMBERED_PASS')

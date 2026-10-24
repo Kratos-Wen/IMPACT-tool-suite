@@ -596,7 +596,7 @@ class HOITimeline(QWidget):
         controls.setContentsMargins(0, 0, 0, 0)
         controls.setSpacing(6)
         self.lbl_timeline_caption = QLabel("Timeline")
-        self.rows_frame.setToolTip('Yellow lines inside the selected event: frames with boxes; orange: duplicate/invalid boxes. Click a line to jump. Drag SOE handles at the top of the event. Alt+, / Alt+.: previous/next box frame. Ctrl/Command + wheel: zoom; Shift + wheel: pan. Alt+1/2/3: Start/Onset/End. Alt+Left/Right: previous/next keyframe.')
+        self.rows_frame.setToolTip('Yellow lines inside the selected event: frames with boxes; orange: duplicate/invalid boxes. Click a line to jump. Drag SOE handles at the top of the event. Alt+, / Alt+.: previous/next box frame. Ctrl/Command + wheel: zoom; Shift + wheel: pan. Alt+1/2/3: Start/Onset/End. Alt+Left/Right: previous/next keyframe. Ctrl/Command+Shift+C/V: copy/paste event boxes at the current frame.')
         self.lbl_timeline_caption.setStyleSheet("color: #344054; font-weight: 600;")
         controls.addWidget(self.lbl_timeline_caption, 0)
         lbl_start = QLabel("Start")

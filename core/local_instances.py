@@ -11,14 +11,17 @@ HISTORY={'provenance','migration_review','source_record','raw_response','raw_mod
          'machine_snapshot','raw_snapshot','source_snapshot','source_object_id'}
 
 
-def localize_instances(source,profile):
+def localize_instances(source,profile,preserve_ids=False):
     """Normalize once on import. Reopening and deleting instances never renumbers IDs."""
     data=deepcopy(source)
     if data.get('provenance',{}).get('video_local_instances',{}).get('schema')==SCHEMA:
         for info in data.get('object_library',{}).values():
             name=instance_category(info.get('category') or info.get('label'),profile)
             info.update(label=name,category=name)
-        for track in data.get('tracks',{}).values():
+        for tid,track in data.get('tracks',{}).items():
+            category=instance_category(track.get('category'),profile)
+            if category in ('hand','left_hand','right_hand') or any(x in tid.lower() for x in ('left_hand','right_hand')):
+                continue
             if str(track.get('object_id')) in data.get('object_library',{}):
                 name=instance_category(track.get('category'),profile)
                 track.update(category=name,instance_name=name)
@@ -39,11 +42,12 @@ def localize_instances(source,profile):
     for uid,name in names.items():
         if name in singletons and uid not in assembly_ids:groups[name].append(uid)
     roots={uid:uid for uid in names}
-    for ids in groups.values():
-        for uid in ids:roots[uid]=min(ids)
+    if not preserve_ids:
+        for ids in groups.values():
+            for uid in ids:roots[uid]=min(ids)
     active=sorted(set(roots.values()))
     contiguous = active in (list(range(len(active))), list(range(1, len(active)+1)))
-    compact=max(active,default=0)>99 or bool(profile.get('compact_import_ids') and not contiguous)
+    compact=not preserve_ids and (max(active,default=0)>99 or bool(profile.get('compact_import_ids') and not contiguous))
     display={uid:i+1 for i,uid in enumerate(active)} if compact else {uid:uid for uid in active}
     numeric={uid:display[root] for uid,root in roots.items()}
     aliases={tid:'T_OBJ_'+str(numeric[uid]) for tid,uid in object_tracks.items()}
@@ -105,5 +109,5 @@ def localize_instances(source,profile):
     result.setdefault('provenance',{})['video_local_instances']={
         'schema':SCHEMA,'original_to_local':{str(k):v for k,v in numeric.items()},
         'source_track_aliases':aliases,'singleton_categories':sorted(singletons),
-        'coordinate_values_preserved':True}
+        'coordinate_values_preserved':True,'reviewed_ids_preserved':bool(preserve_ids)}
     return result

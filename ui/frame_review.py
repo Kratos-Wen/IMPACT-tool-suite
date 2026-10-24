@@ -16,8 +16,9 @@ from core.correction_propagation import object_instance,protected
 
 from ui.reviewer_notes import ReviewerNotesMixin
 from ui.video_validation import VideoValidationMixin
+from ui.frame_copy import FrameCopyMixin
 
-class FrameReviewMixin(ReviewerNotesMixin, VideoValidationMixin):
+class FrameReviewMixin(ReviewerNotesMixin, VideoValidationMixin, FrameCopyMixin):
     def _install_frame_review(self):
         self._observed_frame_context=None
         self._observed_frame_timer=QTimer(self)
@@ -37,6 +38,12 @@ class FrameReviewMixin(ReviewerNotesMixin, VideoValidationMixin):
             ('Jump to End','Alt+3','hoi.jump_end',self._jump_to_selected_end),
             ('Previous event keyframe','Alt+Left','hoi.prev_keyframe',lambda:self._jump_event_keyframe(-1)),
             ('Next event keyframe','Alt+Right','hoi.next_keyframe',lambda:self._jump_event_keyframe(1))]:
+            action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
+            self._frame_review_actions[sid]=(action,key)
+        menu.addSeparator()
+        for label,key,sid,fn in [
+            ('Copy event boxes at this frame','Ctrl+Shift+C','hoi.copy_frame_boxes',self._copy_frame_boxes),
+            ('Paste event boxes at this frame','Ctrl+Shift+V','hoi.paste_frame_boxes',self._paste_frame_boxes)]:
             action=menu.addAction(label,fn);action.setShortcut(QKeySequence(key))
             self._frame_review_actions[sid]=(action,key)
         menu.addAction('Mark selected entity not visible...',self._mark_not_visible)

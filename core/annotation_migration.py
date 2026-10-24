@@ -31,12 +31,9 @@ def canonical_verb(value, profile):
     return (profile.get('verb_aliases',{}) or {}).get(key(verb),verb)
 
 def _target(event, tracks):
-    uid=event.get('noun_object_id',event.get('target_object_id'))
-    if uid is None:
-        tid=(event.get('links') or {}).get('target_track_id')
-        uid=(tracks.get(tid) or {}).get('object_id')
-    try:return int(uid)
-    except (TypeError,ValueError):return None
+    from core.annotation_refs import instance_reference
+    return instance_reference(event,'object',{k:v.get('object_id') for k,v in tracks.items()})
+
 
 def adapt_annotation(source, profile):
     if not isinstance(source,dict) or 'tracks' not in source or 'hoi_events' not in source:
