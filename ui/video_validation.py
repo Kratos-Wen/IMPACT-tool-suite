@@ -11,14 +11,17 @@ class VideoValidationMixin:
         caption=captions.get(status,'Not validated')
         mode=bool(getattr(self,'validation_enabled',False))
         if getattr(self,'lbl_validation',None):
-            self.lbl_validation.setText('Validated ✓' if status=='validated' else 'Validate')
+            self.lbl_validation.setText('Validated' if status=='validated' else 'Validate')
+            self.lbl_validation.setVisible(not mode)
+            self.lbl_validation.setToolTip(caption)
         self._set_status_chip(getattr(self,'lbl_validation_chip',None),caption,'ok' if status=='validated' else 'warn' if status in ('needs_review','in_progress') else 'neutral')
         button=getattr(self,'btn_mark_validated',None)
         if button is not None:
             button.setVisible(mode)
-            button.setText('Validated ✓' if status=='validated' else 'Mark validated')
+            button.setText('✓')
+            button.setStyleSheet('color: #15803d; font-weight: bold;' if status=='validated' else '')
             button.setEnabled(mode and status!='validated' and bool(self.player.frame_count))
-            button.setToolTip((f"Reviewed by {record.get('reviewer','')} at {record.get('validated_at','')}" if status=='validated' else 'Mark this whole video reviewed. Ctrl+S saves the status with the annotation.'))
+            button.setToolTip((f"Reviewed by {record.get('reviewer','')} at {record.get('validated_at','')}" if status=='validated' else 'Mark validated: this whole video has been reviewed. Ctrl+S saves the status with the annotation.'))
 
     def _mark_video_validated(self):
         if not self.validation_enabled or not str(getattr(self,'validator_name','')).strip() or not self.player.frame_count:

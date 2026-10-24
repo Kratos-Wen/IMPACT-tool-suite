@@ -80,6 +80,9 @@ assert loaded['video_validation']['status']=='validated','Save/reload must prese
 w.player.current_frame=25;w._set_frame_controls(25)
 assert w.video_validation['status']=='validated','Navigation does not invalidate review'
 w.btn_validation.setChecked(False)
+for _ in range(3):app.processEvents()
+assert w.width()<=1000,(w.width(),w.minimumSizeHint().width())
+assert w.lbl_validation.text()=='Validated'
 w._push_undo()
 w.event_draft['Left_hand']['verb']='pick_up'
 w._apply_draft_to_selected_event()
