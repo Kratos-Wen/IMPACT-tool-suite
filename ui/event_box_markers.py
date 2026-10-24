@@ -32,7 +32,7 @@ class EventBoxMarkers:
                 continue
             group = groups.setdefault(x, {'rows': {}, 'conflict': False})
             group['rows'].setdefault(frame, []).append(marker)
-            group['conflict'] |= marker['state'] == 'conflict'
+            group['conflict'] |= marker['state'] in ('conflict', 'reviewer')
         for group in groups.values():
             group['frames'] = sorted(group['rows'])
         self.groups = groups

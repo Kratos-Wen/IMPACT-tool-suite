@@ -1865,6 +1865,24 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         review_status_layout.addWidget(self.lbl_review_status)
         self.lbl_frame_review_status=QLabel("Keyframes: select an event")
         review_status_layout.addWidget(self.lbl_frame_review_status)
+        self.reviewer_note_widget = QWidget()
+        reviewer_layout = QVBoxLayout(self.reviewer_note_widget)
+        reviewer_layout.setContentsMargins(0, 0, 0, 0)
+        self.lbl_reviewer_notes = QLabel('')
+        self.lbl_reviewer_notes.setWordWrap(True)
+        self.lbl_reviewer_notes.setStyleSheet('color: #a65b00; font-weight: 600;')
+        reviewer_layout.addWidget(self.lbl_reviewer_notes)
+        reviewer_buttons = QHBoxLayout()
+        self.btn_reviewer_note_next = QPushButton('Next reviewer note')
+        self.btn_reviewer_note_next.clicked.connect(self._jump_reviewer_note)
+        self.btn_reviewer_note_done = QPushButton('Note addressed')
+        self.btn_reviewer_note_done.clicked.connect(self._resolve_reviewer_note)
+        self.btn_reviewer_note_done.setToolTip('Dismiss this note after making the correction. Does not approve any annotation.')
+        reviewer_buttons.addWidget(self.btn_reviewer_note_next)
+        reviewer_buttons.addWidget(self.btn_reviewer_note_done)
+        reviewer_layout.addLayout(reviewer_buttons)
+        self.reviewer_note_widget.hide()
+        review_status_layout.addWidget(self.reviewer_note_widget)
         review_nav_row = QHBoxLayout()
         review_nav_row.setContentsMargins(0, 0, 0, 0)
         review_nav_row.setSpacing(6)
@@ -17840,6 +17858,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return proceed, True
 
     def _update_incomplete_indicator(self):
+        self._refresh_reviewer_notes()
         issues = self._collect_incomplete_hoi()
         self._incomplete_issues = issues
         if not issues:

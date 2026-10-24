@@ -415,5 +415,21 @@ class AudioReviewBrowserTests(unittest.TestCase):
         self.assertEqual(self.js('return document.querySelectorAll("img").length'), 0)
 
 
+    def test_reviewer_hint_navigation_without_changing_review(self):
+        data = json.loads(json.dumps(self.data))
+        data['plan_hash'] = 'synthetic-reviewer-hints'
+        data['items'][-1]['review_hint'] = 'Check this source utterance <not HTML>'
+        path = self.folder / 'reviewer-hints.html'
+        path.write_text(renderer.render_page(data, 'en'), encoding='utf-8')
+        self.browser.get(path.as_uri())
+        self.wait.until(lambda _: self.js('return window.IMPACTAudioReview?.data.plan_hash') == 'synthetic-reviewer-hints')
+        before = self.js('return JSON.stringify(window.IMPACTAudioReview.data)')
+        self.click('next-reviewer-hint')
+        self.assertIn('Check this source utterance <not HTML>', self.browser.find_element(By.ID, 'reviewer-hint').text)
+        self.assertEqual(self.browser.find_element(By.ID, 'text').get_attribute('value'), data['items'][-1]['original_text'])
+        self.assertFalse(self.browser.find_element(By.ID, 'text-ok').is_selected())
+        self.assertEqual(self.js('return JSON.stringify(window.IMPACTAudioReview.data)'), before)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

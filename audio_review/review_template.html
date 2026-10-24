@@ -22,7 +22,7 @@
 <div class="seek-row"><span id="elapsed">0:00</span><input id="seek" type="range" min="0" max="1" value="0" step="0.001" aria-label="Utterance position"><span id="clip-duration">0:00</span></div>
 <div class="absolute-clock"><span data-t="originalClock"></span>: <span id="absolute-time">0:00</span></div>
 <div id="audio-status" role="status"></div><audio id="player" preload="metadata"></audio></section>
-<section class="utterance"><div class="utterance-heading"><strong id="position"></strong><span id="state"></span>
+<section class="utterance"><div id="reviewer-hint" role="note" hidden></div><button id="next-reviewer-hint" hidden></button><div class="utterance-heading"><strong id="position"></strong><span id="state"></span>
 <button id="evidence" data-t="evidence"></button></div>
 <div class="times"><label><span data-t="start"></span><input id="start" type="number" min="0" step="0.001"></label>
 <button id="set-start" data-t="setStart"></button><label><span data-t="end"></span><input id="end" type="number" min="0" step="0.001"></label>

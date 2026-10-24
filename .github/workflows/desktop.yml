@@ -63,6 +63,7 @@ jobs:
       - run: python tests/test_noun_constraints.py
       - run: python tests/test_keyframe_workflow_gui.py
       - run: python tests/test_box_import.py
+      - run: python tests/test_reviewer_notes_gui.py
       - run: python tests/test_bbox_navigation_gui.py
       - run: python tests/test_sparse_library_navigation_gui.py
       - run: python tests/test_manual_frame_display_gui.py

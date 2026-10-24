@@ -186,6 +186,17 @@
   function render() {
     stop(); clip = null; $('validation').textContent = ''; $('audio-status').textContent = '';
     const item = record(), r = review();
+    $('reviewer-hint').hidden = !item?.review_hint;
+    $('reviewer-hint').textContent = item?.review_hint || '';
+    const flagged = items.map((v,i)=>v.review_hint ? i : -1).filter(i=>i>=0);
+    $('next-reviewer-hint').hidden = flagged.length===0;
+    $('next-reviewer-hint').textContent = L.uiLanguage==='zh' ? '跳到待复核音频' : L.uiLanguage==='de' ? 'Zum Prüfhinweis' : 'Next reviewer note';
+    $('next-reviewer-hint').onclick = () => {
+      const pos=flagged.indexOf(current), target=flagged[(pos+1)%flagged.length];
+      if(target==null)return;
+      $('recording').value=items[target].source_relative_path;
+      $('filter').value='all';$('search').value='';current=target;refreshList();
+    };
     for (const id of ['text', 'start', 'end', 'notes', 'text-ok', 'time-ok', 'excluded', 'play', 'original', 'context', 'evidence', 'set-start', 'set-end', 'seek']) $(id).disabled = !item;
     const displayTime = value => Number.isFinite(C.number(value)) ? Number(C.number(value).toFixed(3)) : value ?? '';
     $('text').value = r?.human_text ?? ''; $('start').value = displayTime(r?.human_start_audio_s);

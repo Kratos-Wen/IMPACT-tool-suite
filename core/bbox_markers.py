@@ -2,9 +2,9 @@
 from core.box_import import automatic
 from core.frame_review import signature,valid_record
 
-COLORS={'manual':'#2563eb','viewed':'#15803d','model':'#94a3b8','conflict':'#d97706'}
+COLORS={'reviewer':'#d97706','manual':'#2563eb','viewed':'#15803d','model':'#94a3b8','conflict':'#d97706'}
 PRIORITY={'model':0,'viewed':1,'manual':2,'conflict':3}
-CAPTIONS={'manual':'Drawn / edited','viewed':'Viewed','model':'Model proposal','conflict':'Resolve duplicate / invalid boxes'}
+CAPTIONS={'reviewer':'Reviewer note: inspect this frame','manual':'Drawn / edited','viewed':'Viewed','model':'Model proposal','conflict':'Resolve duplicate / invalid boxes'}
 
 def manually_annotated(box):
     """Geometry added/edited by a person, rather than viewed machine output."""

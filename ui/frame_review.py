@@ -14,7 +14,9 @@ from ui.annotation_policy import onset_resolved
 from core.assembly_timeline import resolve_object,reference_id,change_frames,track_segments
 from core.correction_propagation import object_instance,protected
 
-class FrameReviewMixin:
+from ui.reviewer_notes import ReviewerNotesMixin
+
+class FrameReviewMixin(ReviewerNotesMixin):
     def _install_frame_review(self):
         self._observed_frame_context=None
         self._observed_frame_timer=QTimer(self)
@@ -74,6 +76,18 @@ class FrameReviewMixin:
         return self._bbox_mark_index, revision
 
     def _bbox_frame_markers(self):
+        base = self._bbox_frame_markers_base()
+        notes = self._reviewer_note_markers()
+        if not notes:
+            return base
+        key = (id(base), tuple((n['frame'], n['entity']) for n in notes))
+        if getattr(self, '_reviewer_marker_cache_key', None) != key:
+            self._reviewer_marker_cache_key = key
+            self._reviewer_marker_base = base
+            self._reviewer_marker_cache = base + notes
+        return self._reviewer_marker_cache
+
+    def _bbox_frame_markers_base(self):
         hand=self._selected_hand_data() or {};s=hand.get('interaction_start');e=hand.get('interaction_end')
         if type(s) is not int or type(e) is not int or not self.selected_hand_label:return []
         index, revision = self._manual_bbox_index()
@@ -94,6 +108,7 @@ class FrameReviewMixin:
     def _jump_bbox_frame(self,frame):
         self._pause();self.player.seek(int(frame));self._refresh_boxes_for_frame(int(frame));self._set_frame_controls(int(frame))
         self.hoi_timeline.set_current_frame(int(frame))
+        self._show_reviewer_note_at(int(frame))
 
     def _jump_bbox_direction(self,direction):
         frames=sorted({row['frame'] for row in self._bbox_frame_markers()})
