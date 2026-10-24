@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory() as directory:
             assert control.isVisible()
             assert control.height()>=control.fontMetrics().height()+4,(control.text() if hasattr(control,'text') else 'combo',control.height())
         if not args.baseline:
-            assert w.width()<=width
+            assert w.width()<=width, (width,w.width(),w.minimumSizeHint().width(),w.inline_event_card.minimumSizeHint().width())
             assert w._inline_fields_wide==(w.inline_event_card.width()>=1100)
             assert w._inline_commands_compact==w._inline_fields_wide
             assert w.combo_inline_verb.geometry().top()==w.combo_inline_anomaly.geometry().top() if w._inline_fields_wide else w.combo_inline_verb.geometry().top()<w.combo_inline_anomaly.geometry().top()

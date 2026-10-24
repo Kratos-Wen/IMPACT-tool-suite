@@ -30,6 +30,7 @@ from PyQt5.QtWidgets import (
     QFrame,
     QDialog,
     QGridLayout,
+    QLayout,
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
@@ -1866,10 +1867,13 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.lbl_frame_review_status=QLabel("Keyframes: select an event")
         review_status_layout.addWidget(self.lbl_frame_review_status)
         self.reviewer_note_widget = QWidget()
+        self.reviewer_note_widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         reviewer_layout = QVBoxLayout(self.reviewer_note_widget)
         reviewer_layout.setContentsMargins(0, 0, 0, 0)
+        reviewer_layout.setSizeConstraint(QLayout.SetNoConstraint)
         self.lbl_reviewer_notes = QLabel('')
         self.lbl_reviewer_notes.setWordWrap(True)
+        self.lbl_reviewer_notes.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.lbl_reviewer_notes.setStyleSheet('color: #a65b00; font-weight: 600;')
         reviewer_layout.addWidget(self.lbl_reviewer_notes)
         reviewer_buttons = QHBoxLayout()
@@ -2059,7 +2063,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self._advanced_inspector_visible = True
         self.inline_event_card = QFrame(self)
         self.inline_event_card.setObjectName("statusCard")
+        # Allow a wide form to shrink first, then reflow in its resize event.
+        self.inline_event_card.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         inline_layout = QVBoxLayout(self.inline_event_card)
+        inline_layout.setSizeConstraint(QLayout.SetNoConstraint)
         inline_layout.setContentsMargins(8, 4, 8, 4)
         inline_layout.setSpacing(4)
 
