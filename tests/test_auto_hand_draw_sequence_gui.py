@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory() as directory:
     # Moving to a frame without tracking starts with hand, then noun and tool.
     w.player.current_frame=3
     w._sync_event_draw_mode()
-    assert w.btn_inline_edit_boxes.text()=='Edit Boxes [ON: Hand]'
+    assert w.btn_inline_edit_boxes.text()=='Boxes: Hand'
     draw('hand');draw('noun');draw('instrument')
     # Empty instrument never creates an unassigned tool step.
     w.event_draft['Left_hand'].update(instrument_object_id=None,tool_object_id=None)

@@ -20000,7 +20000,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         btn.blockSignals(True)
         if checkbox is not None:
             btn.setChecked(bool(checkbox.isChecked()))
-        btn.setText(f"Edit Boxes [{mode_label}]")
+        btn.setText("Edit Boxes" if mode_label == "OFF" else "Boxes: " + mode_label.removeprefix("ON: "))
+        btn.setMinimumWidth(btn.fontMetrics().horizontalAdvance(btn.text()) + 12)
         btn.setToolTip(
             "Edit box mode.\n"
             "- OFF: canvas drag pans the video\n"
