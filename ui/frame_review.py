@@ -15,8 +15,9 @@ from core.assembly_timeline import resolve_object,reference_id,change_frames,tra
 from core.correction_propagation import object_instance,protected
 
 from ui.reviewer_notes import ReviewerNotesMixin
+from ui.video_validation import VideoValidationMixin
 
-class FrameReviewMixin(ReviewerNotesMixin):
+class FrameReviewMixin(ReviewerNotesMixin, VideoValidationMixin):
     def _install_frame_review(self):
         self._observed_frame_context=None
         self._observed_frame_timer=QTimer(self)

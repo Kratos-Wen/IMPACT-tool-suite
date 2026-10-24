@@ -1303,6 +1303,11 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         self.btn_validation.setToolTip("Toggle validation on/off")
         self.btn_validation.toggled.connect(self._on_validation_toggled)
         session_row.addWidget(self.btn_validation)
+        self.btn_mark_validated = QPushButton('Mark validated')
+        self.btn_mark_validated.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.btn_mark_validated.clicked.connect(self._mark_video_validated)
+        self.btn_mark_validated.hide()
+        session_row.addWidget(self.btn_mark_validated)
 
         self.file_menu = QMenu(self)
         self.act_load_video = self.file_menu.addAction("Load Video...", self._load_video)
@@ -12792,6 +12797,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             self._flush_live_operation_logs(warn_user=False)
 
         self._annotation_provenance = {}
+        self.video_validation = {}
         self.frame_review = {}
         self.shared_assembly = empty_timeline()
         self.object_states = empty_states()
@@ -13608,6 +13614,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         """Capture a deep copy of event + bbox state for undo/redo."""
         from core.editor_snapshot import clone_boxes
         return {
+            "video_validation": copy.deepcopy(getattr(self,"video_validation",{})),
             "frame_review": copy.deepcopy(getattr(self,"frame_review",{})),
             "shared_assembly": copy.deepcopy(self._assembly_data()),
             "object_states": copy.deepcopy(self._instance_states()),
@@ -13640,6 +13647,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _restore_state(self, state: dict):
         """Restore a snapshot created by _snapshot_state."""
+        self.video_validation = copy.deepcopy(state.get("video_validation", {}))
+        self._refresh_video_validation_status()
         self.object_states = validate_states(state.get("object_states",empty_states()),_PROJECT_PROFILE)
         self.frame_review = copy.deepcopy(state.get("frame_review",{}))
         self.shared_assembly = validate_timeline(state.get("shared_assembly", {"schema":"shared-assembly-1","states":[]}))
@@ -13702,13 +13711,15 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
     def _push_undo(self):
         if self._undo_block:
             return
+        snapshot = self._snapshot_state()
         self._mark_validation_change()
-        self._hoi_undo_stack.append(self._snapshot_state())
+        self._hoi_undo_stack.append(snapshot)
         if len(self._hoi_undo_stack) > self._undo_limit:
             self._hoi_undo_stack.pop(0)
         self._hoi_redo_stack.clear()
 
     def _mark_validation_change(self) -> None:
+        self._invalidate_video_validation()
         if not bool(getattr(self, "validation_enabled", False)):
             return
         self.validation_modified = True
@@ -17865,6 +17876,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         return proceed, True
 
     def _update_incomplete_indicator(self):
+        self._refresh_video_validation_status()
         self._refresh_reviewer_notes()
         issues = self._collect_incomplete_hoi()
         self._incomplete_issues = issues
@@ -18350,6 +18362,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if 'editor_view' in data:
             self._restore_editor_view(data['editor_view'])
         # Reset state
+        from core.video_validation import checked_record
+        self.video_validation = checked_record(data.get("video_validation", {}), data)
         self.object_states = object_states
         self.frame_review = copy.deepcopy(data.get("frame_review",{}))
         self.shared_assembly = shared
@@ -19261,6 +19275,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if getattr(self, "_unassigned_hand_candidates", {}):
             payload["unassigned_hand_candidates"] = copy.deepcopy(self._unassigned_hand_candidates)
         payload['editor_view'] = dict(start_frame=int(self.start_offset), end_frame=self.end_frame)
+        payload['video_validation'] = self._export_video_validation(payload)
         return payload
 
     # ---------- UI refresh ----------
@@ -20057,10 +20072,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             else:
                 self.btn_validation.setToolTip("Toggle validation on/off")
         self._update_incomplete_indicator()
+        self._refresh_video_validation_status()
 
     def _on_validation_toggled(self, on: bool):
         if on:
-            name, ok = QInputDialog.getText(self, "Validation", "Editor name:")
+            name = str(getattr(self, 'validator_name', '') or '').strip()
+            ok = bool(name)
+            if not name:
+                name, ok = QInputDialog.getText(self, "Validation", "Editor name:")
             if not ok or not name.strip():
                 self.btn_validation.blockSignals(True)
                 self.btn_validation.setChecked(False)
@@ -20069,6 +20088,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 self._log("hoi_validation_cancel")
                 return
             self.validator_name = name.strip()
+            if not getattr(self, 'video_validation', {}):
+                self.video_validation = {'schema':'impact-video-validation-1','scope':'video','status':'in_progress'}
             self.validation_enabled = True
             self.validation_session_active = True
             self.validation_started_at = datetime.now().isoformat(timespec="seconds")
@@ -20264,6 +20285,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _hoi_state_signature(self) -> str:
         payload = {
+            "video_validation": getattr(self,"video_validation",{}),
             "frame_review": getattr(self,"frame_review",{}),
             "shared_assembly": self._assembly_data(),
             "object_states": self._instance_states(),
