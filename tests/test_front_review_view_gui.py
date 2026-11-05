@@ -79,6 +79,7 @@ payload=dict(schema='hoi-annotation',video_id='front_fixture',fps=30,frame_count
     hoi_events={'left_hand':[dict(event_id='L_001',start_frame=10,contact_onset_frame=10,end_frame=20,verb='hold',noun_object_id=4,anomaly_labels=['repeated_attempts'])],
                 'right_hand':[dict(event_id='R_001',start_frame=10,contact_onset_frame=10,end_frame=30,verb='pick_up',noun_object_id=8,anomaly_labels=['control_loss'])]})
 w._configure_review_view(task={'view':'front'});w._load_annotations_v2(payload,annotation_path='reviewed.json')
+assert w.player.review_rotation==0,'Front in ordinary annotation mode stays native'
 w._set_selected_event(w.events[0]['event_id'],'Left_hand');w.validator_name='Test reviewer';w.btn_validation.setChecked(True)
 w.player.current_frame=10;w._refresh_boxes_for_frame(10)
 labels='\n'.join(text for text,_ in w.player.review_labels)
@@ -108,6 +109,23 @@ with tempfile.TemporaryDirectory() as directory:
     saved=json.loads(target.read_text());assert saved['review_view']['coordinate_space']=='native_video' and saved['review_view']['rotation_degrees']==180
     w._load_annotations_v2(saved,annotation_path=str(target));assert w.player.review_rotation==180
     assert saved['tracks']['T_LEFT_HAND']['boxes'][0]['bbox']==[1,2,40,50]
-w._configure_review_view(task={'view':'ego'});assert w.player.review_rotation==0
+for view in ('ego','left','right','unknown',''):
+    w._configure_review_view(task={'view':view})
+    assert w.player.review_rotation==0,view+' must not rotate even in Validation'
+w._configure_review_view(task={'view':'front'});assert w.player.review_rotation==180
+for _ in range(3):
+    w.btn_validation.setChecked(False)
+    assert w.player.review_rotation==0 and not w.player.review_labels,'Leaving Validation restores native Front and clears HUD'
+    assert w._review_view_metadata()['view']=='front','Disabling Validation must retain the source view'
+    w.btn_validation.setChecked(True)
+    assert w.player.review_rotation==180,'Reentering Validation rotates Front again'
+w.btn_validation.setChecked(False)
+w._configure_review_view(task={})
+w._configure_review_view(payload={'review_view':{'view':'front','coordinate_space':'native_video','rotation_degrees':180}})
+assert w.player.review_rotation==0,'Saved display rotation cannot bypass ordinary annotation mode'
+w.btn_validation.setChecked(True);assert w.player.review_rotation==180,'Standalone saved Front keeps its view through mode toggles'
+w._configure_review_view(task={'view':'ego'},payload={'review_view':{'view':'front','coordinate_space':'native_video'}})
+assert w.player.review_rotation==0,'Explicit current Ego task overrides saved Front view'
+
 w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.player.release_media();w.deleteLater();app.processEvents()
 print('FRONT_ROTATION_NATIVE_GEOMETRY_GESTURES_HUD_MISSING_BOXES_FORCE_SAVE_AND_RELOAD_PASS')

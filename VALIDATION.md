@@ -6,7 +6,7 @@ Regression checks cover multilabel review, unknown contact, source archiving, co
 
 Automated checks validate software behavior. Industrial-video track accuracy is assessed through human playback and geometry review.
 
-Front review tests check rotated pixels against native geometry, image/screen round trips under zoom and pan, drawing, dragging, deletion, upright playhead-based action/anomaly labels, missing-box warnings, explicit incomplete saves, save/reload and switching back to Ego. Display rotation never alters stored geometry or validation signatures. Validation blocks local propagation at both the button and command entry point.
+Rotation is enabled only for Front in Validation mode. Tests cover switching Validation on/off, all other views and saved-view restoration. Front review tests also check rotated pixels against native geometry, image/screen round trips under zoom and pan, drawing, dragging, deletion, upright playhead-based action/anomaly labels, missing-box warnings, explicit incomplete saves, save/reload and switching back to Ego. Display rotation never alters stored geometry or validation signatures. Validation blocks local propagation at both the button and command entry point.
 
 Sparse Object candidate tests pin imports to the original draft and video identity, reject invalid geometry, weak evidence and unrelated event/instance bindings, preserve existing boxes, and retain an import receipt so a saved human deletion cannot reappear on reopen. Imported boxes remain machine proposals.
 

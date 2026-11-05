@@ -53,7 +53,7 @@ To import just the hands from an annotation JSON, open the video, then use **Fil
 
 The next launch reopens the previous local project and playback position. Task manifests load matching assets and prefer `reviewed.json`; newer recovery drafts still offer a restore prompt. Missing files produce a relocation message. Set `IMPACT_RESTORE_LAST_PROJECT=0` to start with an empty editor.
 
-Front tasks open with a **Front · Rotated 180°** review view. Boxes, relation lines, selection, drawing and dragging use the same view transform; saved geometry and model inputs remain in native video coordinates. Existing videos do not need to be downloaded again.
+Only Front tasks in **Validation mode** use the **Front · Rotated 180°** view. Turning Validation off restores the native orientation. Ego, Left and Right remain unrotated in every mode. Boxes, relation lines, selection, drawing and dragging use the same view transform; saved geometry and model inputs remain in native video coordinates. Existing videos do not need to be downloaded again.
 
 In **Validate**, an upright overlay shows the current left/right actions, anomalies and missing boxes at keyframes. Relation lines appear when the corresponding boxes exist. Missing evidence has jump controls and a save warning; **Continue anyway** still saves the draft. Local SAM propagation is disabled during validation. Optional `object_candidates.json` files add editable, unverified boxes only to empty locations in an unchanged task draft. Saved human work takes priority.
 

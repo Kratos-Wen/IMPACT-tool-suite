@@ -12,8 +12,10 @@ class VideoValidationMixin:
             saved = payload.get('review_view') or {}
             if saved.get('coordinate_space') == 'native_video':
                 view = str(saved.get('view') or '').lower()
-        self.player.set_review_rotation(180 if view == 'front' else 0)
-        if view != 'front':
+        self._review_task_view = view
+        rotate = bool(getattr(self, 'validation_enabled', False)) and view == 'front'
+        self.player.set_review_rotation(180 if rotate else 0)
+        if not rotate:
             self.player.set_review_labels([])
 
     def _review_view_metadata(self):
@@ -70,6 +72,7 @@ class VideoValidationMixin:
         self.player.set_review_labels(labels)
 
     def _refresh_video_validation_status(self):
+        self._configure_review_view()
         record=getattr(self,'video_validation',{}) or {}
         status=record.get('status','not_validated')
         captions={'validated':'Validated ✓','needs_review':'Needs revalidation','in_progress':'In validation','not_validated':'Not validated'}
