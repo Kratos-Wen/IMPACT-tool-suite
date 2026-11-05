@@ -21251,11 +21251,14 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                     raise ValueError('Hand XML contains invalid video frames or geometry')
             # XML frames are native video indices, not crop-relative indices.
             rows = [dict(row, orig_frame=row['orig_frame'] - int(self.start_offset)) for row in rows]
+            from core.box_import import import_box
+            mode = self._automatic_box_import_mode()
+            rows = [row for row in rows if import_box(row, True, mode)]
             merged = merge_hand_candidates(self.raw_boxes, rows,
                 suppressed=getattr(self, '_suppressed_hand_boxes', []),
                 reviews=getattr(self, 'frame_review', {}), offset=self.start_offset)
             added = len(merged) - len(self.raw_boxes)
-            if added:
+            if added or merged != self.raw_boxes:
                 self.raw_boxes = merged
                 self._rebuild_bboxes_from_raw()
                 self._bump_query_state_revision()
@@ -21416,6 +21419,22 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 return int(matches[-1])
             return 0
 
+        def xml_source(box, track=None):
+            attributes = {node.get('name'): str(node.text or '').strip().lower()
+                          for node in box.findall('attribute')}
+            origin = str(box.get('source') or attributes.get('source') or (track.get('source') if track is not None else '') or '').lower()
+            if origin.startswith(('manual', 'human_draw')):
+                return 'manual_hands_xml'
+            if origin.startswith(('auto','model','machine','tracker','sam','yolo','qwen')):
+                return 'hand_sidecar_candidate'
+            if track is not None and box.get('keyframe') == '0':
+                return 'hand_sidecar_candidate'
+            return 'hands_xml'
+
+        def xml_verified(box):
+            return any(node.get('name') == 'human_verified' and str(node.text or '').lower() == 'true'
+                       for node in box.findall('attribute'))
+
         images = root.findall("image")
         if images:
             for img in images:
@@ -21440,7 +21459,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                                 "id": hand_box_id(label),
                                 "orig_frame": frame,
                                 "label": label,
-                                "source": "hands_xml",
+                                "source": xml_source(box),
+                                "human_verified": xml_verified(box),
                                 "locked": False,
                                 "x1": float(box.attrib.get("xtl")),
                                 "y1": float(box.attrib.get("ytl")),
@@ -21471,7 +21491,8 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                                 "id": hand_box_id(label),
                                 "orig_frame": int(box.attrib.get("frame")),
                                 "label": label,
-                                "source": "hands_xml",
+                                "source": xml_source(box, track),
+                                "human_verified": xml_verified(box),
                                 "locked": False,
                                 "x1": float(box.attrib.get("xtl")),
                                 "y1": float(box.attrib.get("ytl")),

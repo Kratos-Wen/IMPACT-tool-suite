@@ -68,7 +68,19 @@ def read_bound_hands(path,trial,frame_count,fps):
 
 def merge_hand_candidates(existing,candidates,*,suppressed=(),reviews=None,offset=0):
     keys={(hand_box_id(row.get('label')),row.get('orig_frame')) for row in existing if hand_box_id(row.get('label')) is not None}
-    deleted=set(suppressed);reviews=reviews or {};result=list(existing)
+    deleted=set(suppressed);reviews=reviews or {};result=[];references={}
+    for row in candidates:
+        if row.get('source')=='hand_sidecar_candidate':
+            references.setdefault((row['id'],row['orig_frame']),[]).append(row)
+    for row in existing:
+        matches=references.get((hand_box_id(row.get('label')),row.get('orig_frame')),[])
+        # Old generic XML imports lost the auto/manual distinction. Correct the
+        # source only when the bound companion contains the identical geometry.
+        # Coordinates, human verification and explicit manual edits stay intact.
+        if (row.get('source')=='hands_xml' and len(matches)==1 and
+                all(row.get(key)==matches[0].get(key) for key in ('x1','y1','x2','y2'))):
+            result.append(dict(row,source='hand_sidecar_candidate'))
+        else:result.append(row)
     for row in candidates:
         label=row['label'];frame=row['orig_frame'];display=frame+offset
         if ((row['id'],frame) in keys or f'{label}:{display}' in deleted or

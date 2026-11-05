@@ -3,7 +3,7 @@ def automatic(box, track=None):
     if box.get('human_verified') or box.get('locked'):return False
     source=str(box.get('source') or (track or {}).get('source') or '').lower()
     if source.startswith(('manual','human','materialized_handtrack')):return False
-    return (any(word in source for word in ('automatic','machine','model','proposal','yolo','mediapipe','sam2','qwen','inferred')) or
+    return (any(word in source for word in ('automatic','machine','model','proposal','candidate','tracking','yolo','mediapipe','sam2','qwen','inferred')) or
             bool(box.get('automatic') or (track or {}).get('automatic')))
 
 def import_box(box,is_hand,mode='all',track=None):

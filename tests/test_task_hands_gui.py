@@ -61,6 +61,28 @@ with tempfile.TemporaryDirectory() as directory:
  before=copy.deepcopy(reopened.raw_boxes)
  assert reopened._auto_load_video_hands(video)==0 and reopened.raw_boxes==before
  assert not warnings,warnings
+ # Generic CVAT exports also carry machine-source metadata. Their dense rows
+ # must not become manual ticks or visible boxes between required keyframes.
+ rows=[]
+ for frame in range(30):
+  human='true' if frame in (15,16) else 'false';manual=' source="manual"' if frame==15 else ''
+  rows.append(f'<box frame="{frame}" xtl="10" ytl="10" xbr="20" ybr="20" outside="0" keyframe="1"{manual}><attribute name="human_verified">{human}</attribute></box>')
+ (root/'hand.xml').write_text('<annotations><track id="0" label="Left_hand" source="auto">'+''.join(rows)+'</track></annotations>')
+ reopened.raw_boxes.append(dict(id=-1,orig_frame=7,label='Left_hand',source='hands_xml',human_verified=False,locked=False,x1=10.,y1=10.,x2=20.,y2=20.))
+ assert reopened._auto_load_video_hands(video)>0
+ assert next(b for b in reopened.raw_boxes if b['orig_frame']==7)['source']=='hand_sidecar_candidate'
+ assert next(b for b in reopened.raw_boxes if b['orig_frame']==15)['source']=='manual_hands_xml'
+ assert next(b for b in reopened.raw_boxes if b['orig_frame']==16)['source']=='hand_sidecar_candidate'
+ eid=reopened._on_hoi_timeline_create('Left_hand',0,29,5);assert eid is not None
+ reopened.event_draft['Left_hand']['verb']='hold';reopened._apply_draft_to_selected_event()
+ assert {m['frame'] for m in reopened._bbox_frame_markers()}=={0,15},'Dense machine rows are not manual frame ticks'
+ reopened.player.seek(7);reopened._refresh_boxes_for_frame(7)
+ assert not any(b.get('id')==-1 for b in reopened.player.overlay_boxes),'Machine hands are hidden between keyframes'
+ reopened.player.seek(29);reopened._refresh_boxes_for_frame(29)
+ assert any(b.get('id')==-1 for b in reopened.player.overlay_boxes),'Machine hands remain available at End'
+ reopened._box_import_override='none';reopened.raw_boxes=[b for b in reopened.raw_boxes if b['orig_frame']==0]
+ assert reopened._auto_load_video_hands(video)==2,'Manual and explicitly verified XML frames survive a machine-import restriction'
+ assert {b['orig_frame'] for b in reopened.raw_boxes}=={0,15,16}
  reopened._stop_autosave();reopened._mark_hoi_saved();reopened._close_request_approved=True
  reopened.close();reopened.player.release_media()
 print('TASK_HAND_XML_AUTOMATIC_LOAD_BINDING_HUMAN_PRESERVATION_SUPPRESSION_IDEMPOTENCE_PASS')
