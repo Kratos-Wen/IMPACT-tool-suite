@@ -40,6 +40,9 @@ def move(a,b,mod=Qt.NoModifier):
 center=tuple(round(x) for x in player._image_to_screen(100,100))
 move(center,(center[0]+20,center[1]+10))
 assert events[-1][0]==17 and box['x1']==30 and box['y1']==35,'Dragging right/down moves native coordinates left/up'
+corner=tuple(round(x) for x in player._image_to_screen(box['x1'],box['y1']))
+move(corner,(corner[0]+10,corner[1]+8))
+assert (box['x1'],box['y1'],box['x2'],box['y2'])==(25,31,150,155),'Rotated corner handles resize the correct native edge'
 player.set_edit_context([],on_change=lambda uid,data:events.append((uid,copy.deepcopy(data))),allow_add=True)
 player.edit_auto_label_fetcher=lambda:('part',2)
 a=tuple(round(x) for x in player._image_to_screen(20,30));b=tuple(round(x) for x in player._image_to_screen(80,90))
@@ -50,6 +53,13 @@ player.set_edit_context([box],on_change=lambda uid,data:events.append((uid,copy.
 center=QPoint(*(round(x) for x in player._image_to_screen((box['x1']+box['x2'])/2,(box['y1']+box['y2'])/2)))
 QTest.mouseClick(player,Qt.RightButton,Qt.NoModifier,center)
 assert events[-1][0]==17 and events[-1][1]['_action']=='delete'
+player._zoom=2;player._pan_x=-80;player._pan_y=-110;player._ensure_pan_clamped();player.repaint()
+selection=QRect(200,150,120,80)
+anchor=player._screen_to_image((selection.left()+selection.right())/2,(selection.top()+selection.bottom())/2)
+player._zoom_to_selection(selection);player.repaint()
+center_native=player._screen_to_image(player.width()/2,player.height()/2)
+assert all(abs(a-b)<1e-6 for a,b in zip(anchor,center_native)),'Magnifier selection remains centered after rotation, zoom and pan'
+player._zoom=1;player._recenter_keep_zoom();player.repaint()
 player.set_review_rotation(0);player.repaint();assert player._screen_to_image(40,60)==(20,30)
 player.release_media();player.close();player.deleteLater();app.processEvents()
 
@@ -75,6 +85,10 @@ labels='\n'.join(text for text,_ in w.player.review_labels)
 assert 'L: hold' in labels and 'R: pick up' in labels
 assert 'Repeated attempts' in labels and 'Control loss' in labels and 'Object [4]' in labels
 assert w.player.review_rotation==180
+original_review=copy.deepcopy(w.frame_review)
+w.frame_review={'10':{'O:4':{'state':'not_visible'}}};w._refresh_boxes_for_frame(10)
+assert 'No keyframe box:' not in '\n'.join(text for text,_ in w.player.review_labels),'Recorded invisibility does not require an invented box'
+w.frame_review=original_review
 assert not w.btn_correct_track.isEnabled()
 with patch.object(w,'_correction_targets',side_effect=AssertionError('Local propagation must not start in validation')):
     w._start_correction_propagation()
