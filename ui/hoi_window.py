@@ -19035,7 +19035,18 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
         # Build per-actor events
         events = {actor["id"].lower(): [] for actor in self.actors_config}
-        counts = {actor["id"]: 0 for actor in self.actors_config}
+        # Imported IDs must remain stable, including zero and legacy duplicates.
+        # Reserve them before assigning IDs to events inserted earlier in time.
+        reserved_event_ids = {
+            actor["id"]: {
+                str(hand.get("_source_event_id"))
+                for event in self.events
+                for hand in [event.get("hoi_data", {}).get(actor["id"], {})]
+                if hand.get("_source_event_id") not in (None, "")
+            }
+            for actor in self.actors_config
+        }
+        next_event_number = {actor["id"]: 1 for actor in self.actors_config}
 
         for i, event in enumerate(self.events):
             global_start, global_end = event.get("frames", [0, 0])
@@ -19064,9 +19075,16 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
                 if not has_info:
                     continue
 
-                counts[hand_key] += 1
                 prefix = self._get_actor_short_label(hand_key)
-                event_id = h_data.get("_source_event_id") or f"{prefix}_{counts[hand_key]:03d}"
+                event_id = h_data.get("_source_event_id")
+                if event_id is None or event_id == "":
+                    while True:
+                        event_id = f"{prefix}_{next_event_number[hand_key]:03d}"
+                        next_event_number[hand_key] += 1
+                        if event_id not in reserved_event_ids[hand_key]:
+                            break
+                    reserved_event_ids[hand_key].add(event_id)
+                    h_data["_source_event_id"] = event_id
 
                 final_start = s if s is not None else global_start
                 final_onset = o

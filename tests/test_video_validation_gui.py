@@ -108,5 +108,38 @@ w._load_annotations_v2(changed)
 assert w.video_validation['status']=='needs_review','Stale externally edited JSON must not claim validated'
 w._load_annotations_v2(original)
 assert not w.video_validation,'Validation never leaks to a new/unvalidated file'
+
+# A Front reviewer may insert an event before imported events. Their external
+# IDs must not be recycled, and legacy duplicate IDs must remain untouched.
+case=copy.deepcopy(original)
+template=case['hoi_events']['left_hand'][0]
+case['hoi_events']['left_hand']=[
+    dict(copy.deepcopy(template),event_id=event_id,start_frame=start,
+         contact_onset_frame=start,end_frame=start+5)
+    for event_id,start in [('L_001',10),('L_002',30),('L_002',50),(0,70)]
+]
+w._load_annotations_v2(case)
+old_rows=copy.deepcopy(w._build_payload_v2()['hoi_events']['left_hand'])
+assert [e['event_id'] for e in old_rows]==['L_001','L_002','L_002',0]
+w.validator_name='Front reviewer';w.btn_validation.setChecked(True)
+created=w._on_hoi_timeline_create('Left_hand',0,5,1)
+assert created is not None
+first=w._build_payload_v2()['hoi_events']['left_hand']
+new=next(e for e in first if e['start_frame']==0)
+assert new['event_id']=='L_003','Reserve every imported ID before allocating a new one'
+assert [e for e in first if e['start_frame']!=0]==old_rows,'Existing events are unchanged'
+second=w._on_hoi_timeline_create('Left_hand',85,90,86)
+assert second is not None
+rows=w._build_payload_v2()['hoi_events']['left_hand']
+assert next(e for e in rows if e['start_frame']==85)['event_id']=='L_004'
+assert next(e for e in rows if e['start_frame']==0)['event_id']=='L_003'
+assert w._build_payload_v2()['hoi_events']['left_hand']==rows,'Repeated export keeps IDs stable'
+with tempfile.TemporaryDirectory() as directory:
+    target=Path(directory)/'reviewed.json'
+    with patch.object(QFileDialog,'getSaveFileName',return_value=(str(target),'JSON Files (*.json)')), patch.object(w,'_require_participant_code_for_study_save',return_value=True), patch.object(w,'_check_incomplete_hoi',return_value=(True,True)):
+        w._save_annotations_json()
+    saved=json.loads(target.read_text())
+w._load_annotations_v2(saved)
+assert w._build_payload_v2()['hoi_events']['left_hand']==rows,'Inserted Front events survive save/reload'
 w._stop_autosave();w._mark_hoi_saved();w._close_request_approved=True;w.close();w.player.release_media();w.deleteLater();app.processEvents()
-print('VIDEO_VALIDATION_MARK_SAVE_RELOAD_RECOVERY_EDIT_INVALIDATION_NAVIGATION_AND_SOURCE_GUARD_PASS')
+print('VIDEO_VALIDATION_MARK_SAVE_RELOAD_RECOVERY_EDIT_INVALIDATION_NAVIGATION_SOURCE_GUARD_AND_NEW_EVENT_IDS_PASS')
