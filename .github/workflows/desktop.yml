@@ -67,6 +67,8 @@ jobs:
       - run: python tests/test_annotation_refs.py
       - run: python tests/test_frame_copy_gui.py
       - run: python tests/test_video_validation_gui.py
+      - run: python tests/test_front_review_view_gui.py
+      - run: python tests/test_object_candidates.py
       - run: python tests/test_reviewer_notes_gui.py
       - run: python tests/test_bbox_navigation_gui.py
       - run: python tests/test_sparse_library_navigation_gui.py

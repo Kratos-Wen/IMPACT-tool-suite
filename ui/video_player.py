@@ -132,6 +132,8 @@ class VideoPlayer(QLabel):
         self.overlay_boxes = []
         self.overlay_relations = []
         self.overlay_bars = []
+        self.review_rotation = 0
+        self.review_labels = []
         # box editing state
         self.edit_enabled = False
         self.edit_add_enabled = False
@@ -182,6 +184,8 @@ class VideoPlayer(QLabel):
         if self.cap:self.cap.release()
         self._clear_frame_cache()
         self._media_path = path
+        self.set_review_rotation(0)
+        self.set_review_labels([])
         self.cap = prepared.pop('capture')
         self.frame_count = prepared['frames']
         fps = prepared['fps']
@@ -554,6 +558,36 @@ class VideoPlayer(QLabel):
         h = self._frame_h * s
         return x, y, w, h
 
+    def set_review_rotation(self, degrees):
+        """Rotate the review view while keeping all stored/model coordinates native."""
+        degrees = int(degrees)
+        if degrees not in (0, 180):
+            raise ValueError('Review rotation must be 0 or 180 degrees')
+        if degrees != self.review_rotation:
+            self.review_rotation = degrees
+            self._edit_active = None
+            self._edit_anchor = None
+            self._edit_add_active = False
+            self._edit_add_origin = None
+            self._rubber.hide()
+            self.update()
+
+    def set_review_labels(self, labels):
+        labels = list(labels or [])
+        if labels != self.review_labels:
+            self.review_labels = labels
+            self.update()
+
+    def _image_to_view(self, ix, iy):
+        if self.review_rotation == 180:
+            return self._frame_w - ix, self._frame_h - iy
+        return ix, iy
+
+    def _image_to_screen(self, ix, iy):
+        x, y, w, h = self._draw_rect()
+        vx, vy = self._image_to_view(float(ix), float(iy))
+        return x + vx * w / max(1, self._frame_w), y + vy * h / max(1, self._frame_h)
+
     def _ensure_pan_clamped(self):
         """Keep the image from being dragged fully out of view; recenter when smaller than viewport."""
         if not (self._frame_w and self._frame_h):
@@ -594,10 +628,10 @@ class VideoPlayer(QLabel):
 
         s_fit = self._fit_scale()
         # convert selection (viewport coords) to image coords
-        ix1 = (vis.left() - x - self._pan_x) / (s_fit * self._zoom)
-        iy1 = (vis.top() - y - self._pan_y) / (s_fit * self._zoom)
-        ix2 = (vis.right() - x - self._pan_x) / (s_fit * self._zoom)
-        iy2 = (vis.bottom() - y - self._pan_y) / (s_fit * self._zoom)
+        ix1 = (vis.left() - x) / (s_fit * self._zoom)
+        iy1 = (vis.top() - y) / (s_fit * self._zoom)
+        ix2 = (vis.right() - x) / (s_fit * self._zoom)
+        iy2 = (vis.bottom() - y) / (s_fit * self._zoom)
         iw = max(1e-3, abs(ix2 - ix1))
         ih = max(1e-3, abs(iy2 - iy1))
 
@@ -829,10 +863,10 @@ class VideoPlayer(QLabel):
         sx = float(w) / float(self._frame_w)
         sy = float(h) / float(self._frame_h)
         try:
-            dx1 = int(round(x + float(box.get("x1", 0.0) or 0.0) * sx))
-            dy1 = int(round(y + float(box.get("y1", 0.0) or 0.0) * sy))
-            dx2 = int(round(x + float(box.get("x2", 0.0) or 0.0) * sx))
-            dy2 = int(round(y + float(box.get("y2", 0.0) or 0.0) * sy))
+            a = self._image_to_view(float(box.get('x1', 0.0) or 0.0), float(box.get('y1', 0.0) or 0.0))
+            b = self._image_to_view(float(box.get('x2', 0.0) or 0.0), float(box.get('y2', 0.0) or 0.0))
+            dx1, dy1 = int(round(x + min(a[0], b[0]) * sx)), int(round(y + min(a[1], b[1]) * sy))
+            dx2, dy2 = int(round(x + max(a[0], b[0]) * sx)), int(round(y + max(a[1], b[1]) * sy))
         except Exception:
             return None
         return QRect(dx1, dy1, max(1, dx2 - dx1), max(1, dy2 - dy1))
@@ -943,6 +977,11 @@ class VideoPlayer(QLabel):
             QPainter.SmoothPixmapTransform,
             bool(not self.is_playing and self._zoom > 1.0),
         )
+        p.save()
+        if self.review_rotation:
+            p.translate(x + w / 2.0, y + h / 2.0)
+            p.rotate(self.review_rotation)
+            p.translate(-x - w / 2.0, -y - h / 2.0)
         p.drawImage(
             QRect(
                 int(round(x)),
@@ -952,6 +991,7 @@ class VideoPlayer(QLabel):
             ),
             self._last_qimage,
         )
+        p.restore()
         # draw overlay boxes
         if self.overlay_boxes:
             for box in self.overlay_boxes:
@@ -966,10 +1006,11 @@ class VideoPlayer(QLabel):
                 except Exception:
                     color = QColor("#ff4d4f")
                 # scale and offset to drawn image space
-                dx1 = int(round(x + x1 * sx))
-                dy1 = int(round(y + y1 * sy))
-                dx2 = int(round(x + x2 * sx))
-                dy2 = int(round(y + y2 * sy))
+                rect = self._box_screen_rect(box)
+                if rect is None:
+                    continue
+                dx1, dy1 = rect.x(), rect.y()
+                dx2, dy2 = dx1 + rect.width(), dy1 + rect.height()
                 pen = QColor(color)
                 pen.setAlpha(int(box.get("alpha", 220) or 220))
                 selected = bool(box.get("selected"))
@@ -1033,10 +1074,9 @@ class VideoPlayer(QLabel):
                     width = 3
                 pen = QPen(color, max(1, width), Qt.SolidLine)
                 p.setPen(pen)
-                dx1 = int(round(x + x1 * sx))
-                dy1 = int(round(y + y1 * sy))
-                dx2 = int(round(x + x2 * sx))
-                dy2 = int(round(y + y2 * sy))
+                a, b = self._image_to_screen(x1, y1), self._image_to_screen(x2, y2)
+                dx1, dy1 = int(round(a[0])), int(round(a[1]))
+                dx2, dy2 = int(round(b[0])), int(round(b[1]))
                 p.drawLine(dx1, dy1, dx2, dy2)
                 if lbl:
                     font = QFont("Arial", 10)
@@ -1211,6 +1251,22 @@ class VideoPlayer(QLabel):
                         p.setPen(QColor("#ffd666"))  # bright yellow for contrast
                     p.drawText(rect.left() + padding, y_offset, text)
                     y_offset += metrics.height()
+        # Review text stays upright and fixed in the viewport when zooming/panning.
+        rows = ([('Front · Rotated 180°', '#93c5fd')] if self.review_rotation else []) + self.review_labels
+        if rows:
+            font = QFont(self.font())
+            font.setPointSizeF(max(10.0, font.pointSizeF()))
+            font.setBold(True)
+            p.setFont(font)
+            metrics = p.fontMetrics()
+            limit = max(20, self.width() - 32)
+            rendered = [(metrics.elidedText(str(text), Qt.ElideRight, limit), color) for text, color in rows]
+            width = min(limit + 16, max(metrics.horizontalAdvance(text) for text, _ in rendered) + 16)
+            height = metrics.height() * len(rendered) + 12
+            p.fillRect(8, 8, width, height, QColor(15, 23, 42, 205))
+            for index, (text, color) in enumerate(rendered):
+                p.setPen(QColor(color))
+                p.drawText(16, 14 + metrics.ascent() + index * metrics.height(), text)
         p.end()
 
     # ========== box editing interactions ==========
@@ -1228,7 +1284,7 @@ class VideoPlayer(QLabel):
         sy = float(self._frame_h) / float(h)
         ix = (px - x) * sx
         iy = (py - y) * sy
-        return ix, iy
+        return self._image_to_view(ix, iy)  # 180 degrees is its own inverse.
 
     @staticmethod
     def _cursor_for_mode(mode: str):

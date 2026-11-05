@@ -10508,6 +10508,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         global _DEFAULT_ANOMALY_LABEL, _ANOMALY_LABEL_OPTIONS, _ANOMALY_LABEL_ALIASES
         task = resolve_task(video_path)
         if task is None:
+            self._configure_review_view(task={})
             return False
         data, paths = task["data"], task["paths"]
         # Validate every required input before changing profile or annotations.
@@ -10560,6 +10561,10 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if abs(float(payload.get("fps", -1))-float(self.player.frame_rate)) > 0.01:
                 raise ValueError("Saved work FPS differs from this video")
         self._reserve_autosave(video_path)
+        self._configure_review_view(task=data)
+        from core.object_candidates import load_adjacent_candidates
+        payload, candidate_report = load_adjacent_candidates(annotation, payload)
+        self._log('hoi_sparse_object_candidates', **candidate_report)
         self._load_annotations_v2(payload, annotation_path=str(annotation))
         self._apply_profile_libraries()
         self.current_annotation_path = str(resume or annotation)
@@ -18329,6 +18334,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
 
     def _load_annotations_v2(self, data: dict, annotation_path: str = ""):
         """Load unified per-hand event format."""
+        self._configure_review_view(payload=data)
         from core.annotation_migration import adapt_annotation
         archive = None
         if data.get('schema') != 'hoi-annotation' and annotation_path and os.path.isfile(annotation_path):
@@ -19291,6 +19297,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
         if getattr(self, "_unassigned_hand_candidates", {}):
             payload["unassigned_hand_candidates"] = copy.deepcopy(self._unassigned_hand_candidates)
         payload['editor_view'] = dict(start_frame=int(self.start_offset), end_frame=self.end_frame)
+        payload['review_view'] = self._review_view_metadata()
         payload['video_validation'] = self._export_video_validation(payload)
         return payload
 
@@ -19806,6 +19813,7 @@ class HOIWindow(LabelGlossaryMixin, AutosaveMixin, AnnotationPolicyMixin, FrameR
             if isinstance(b, dict) and "id" in b
             and (not self._normalize_hand_label(b.get("label")) or self._event_box_visible(b))
         }
+        self._update_review_presentation(frame, display_rels, current_boxes)
 
         for r in display_rels:
             hand_label = r.get("hand_id")

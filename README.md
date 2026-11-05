@@ -53,7 +53,11 @@ To import just the hands from an annotation JSON, open the video, then use **Fil
 
 The next launch reopens the previous local project and playback position. Task manifests load matching assets and prefer `reviewed.json`; newer recovery drafts still offer a restore prompt. Missing files produce a relocation message. Set `IMPACT_RESTORE_LAST_PROJECT=0` to start with an empty editor.
 
-**Track Correction** opens a target checklist and frame interval. Choose the current event's hands, Object and instrument, then set the beginning and end on either side of the current anchor frame. Targets need an unambiguous box at that frame. Each branch respects its event, human anchors and assembly changes.
+Front tasks open with a **Front · Rotated 180°** review view. Boxes, relation lines, selection, drawing and dragging use the same view transform; saved geometry and model inputs remain in native video coordinates. Existing videos do not need to be downloaded again.
+
+In **Validate**, an upright overlay shows the current left/right actions, anomalies and missing boxes at keyframes. Relation lines appear when the corresponding boxes exist. Missing evidence has jump controls and a save warning; **Continue anyway** still saves the draft. Local SAM propagation is disabled during validation. Optional `object_candidates.json` files add editable, unverified boxes only to empty locations in an unchanged task draft. Saved human work takes priority.
+
+**Track Correction**, outside validation, opens a target checklist and frame interval. Choose the current event's hands, Object and instrument, then set the beginning and end on either side of the current anchor frame. Targets need an unambiguous box at that frame. Each branch respects its event, human anchors and assembly changes.
 
 Propagation runs in a background queue. Continue editing while the small progress bar shows processed target-frames and an estimated remaining time. Results automatically become **unverified** boxes; each applied batch supports one-step undo. Manual boxes, deletions, visibility decisions and changed event bindings are preserved. A new manual reference inside a running interval cuts the old result and schedules a bounded continuation from that reference. **Details** lists jobs and offers cancel, retry/resume and recovery of saved candidates.
 

@@ -6,6 +6,10 @@ Regression checks cover multilabel review, unknown contact, source archiving, co
 
 Automated checks validate software behavior. Industrial-video track accuracy is assessed through human playback and geometry review.
 
+Front review tests check rotated pixels against native geometry, image/screen round trips under zoom and pan, drawing, dragging, deletion, upright playhead-based action/anomaly labels, missing-box warnings, explicit incomplete saves, save/reload and switching back to Ego. Display rotation never alters stored geometry or validation signatures. Validation blocks local propagation at both the button and command entry point.
+
+Sparse Object candidate tests pin imports to the original draft and video identity, reject invalid geometry, weak evidence and unrelated event/instance bindings, preserve existing boxes, and retain an import receipt so a saved human deletion cannot reappear on reopen. Imported boxes remain machine proposals.
+
 Editor performance checks cover a 20,000-box fixture, frame-index and label-cache invalidation after edits, exact decoded pixels after preview and replay, bounded native-frame caching, coalesced hover/slider previews and precise slider release. Recovery and undo snapshots retain nested metadata without sharing live geometry. These checks run in the desktop CI matrix; timings from a compute node do not establish frame rates on annotators' computers.
 
 Background preview checks hold a decoder behind a test barrier while Qt timers keep running, discard intermediate requests and stale results after committed seeks or video switches, recover from preview errors, and compare native pixels with an independent decoder. Preview decoding has a separate capture handle and never moves the committed annotation frame.

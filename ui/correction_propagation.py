@@ -91,6 +91,9 @@ class CorrectionPropagationMixin(TrackingTasksMixin):
         return requests,notes
 
     def _start_correction_propagation(self):
+        if getattr(self,'validation_enabled',False) or getattr(self.player,'review_rotation',0)==180:
+            QMessageBox.information(self,'Validation','Edit keyframe boxes locally. Track propagation runs centrally after upload.')
+            return
         if self.selected_event_id is None:
             QMessageBox.information(self,'Track','Select an event first.');return
         self._pause()
